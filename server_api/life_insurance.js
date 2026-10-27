@@ -1,11 +1,13 @@
 const { sb, json, readBody, currentUser, hasPermission, roleRank, logAction, handler } = require('./_lib');
+const { safeId } = require('./ids');
+const { lifeEmbed, requireUrl, rpStamp, nextSerial, text: clip } = require('./discord_forms');
+const { lifeFinancials, lifeAsOf } = require('./money');
 
 const CAPITALS = new Set([1000, 2500, 5000, 7500, 10000]);
 const ACTIVE = new Set(['active','payments_complete','placed']);
 const STATUSES = new Set([...ACTIVE,'closure_requested','closed','death_reported','under_review','paid_to_beneficiary','cancelled']);
 
 function clean(value, max = 500){ return String(value ?? '').trim().slice(0, max); }
-function safeId(value){ const n=Number(value); return Number.isSafeInteger(n)&&n>0?n:null; }
 function safeAgency(value){
   const v=clean(value,30).toLowerCase();
   if(v==='sd'||v==='saint_denis')return 'saint_denis';
@@ -26,29 +28,15 @@ function schedule(capital,start){
   const amount=money(capital/8);
   return Array.from({length:8},(_,index)=>({number:index+1,date:addDays(start,index*7),amount,status:'pending',paid_at:null}));
 }
-function completedWeeks(from,to=new Date()){
-  const start=new Date(`${from}T12:00:00Z`); if(Number.isNaN(start.getTime()))return 0;
-  return Math.max(0,Math.floor((to.getTime()-start.getTime())/604800000));
-}
-function financials(contract, now=new Date()){
-  const payments=Array.isArray(contract.payments)?contract.payments:[];
-  const paid=payments.filter(p=>p.status==='paid'&&p.paid_at);
-  const principal=money(paid.reduce((sum,p)=>sum+Number(p.amount||0),0));
-  // Les intérêts portent sur chaque somme effectivement déposée. Ils ne sont pas
-  // ajoutés au principal : aucune capitalisation non prévue par la règle n'est inventée.
-  const interest=money(paid.reduce((sum,p)=>sum+Number(p.amount||0)*0.05*completedWeeks(String(p.paid_at).slice(0,10),now),0));
-  const balance=money(principal+interest);
-  return {principal,interest,balance,paid_installments:paid.length,remaining_installments:8-paid.length};
+function financials(contract){
+  return lifeFinancials(contract && contract.payments, lifeAsOf(contract));
 }
 function normalize(row){return {...row,payments:Array.isArray(row.payments)?row.payments:[],financials:financials(row)};}
 async function event(contractId,type,actor,details={}){
   await sb.from('pret_life_insurance_events').insert({contract_id:contractId,event_type:type,actor_username:actor,details});
 }
-async function nextNumber(agency){
-  const code={van_horn:'VH',saint_denis:'SD',rhodes:'RH',valentine:'VT',blackwater:'BW',strawberry:'ST',sunset:'SS'}[agency];
-  const {count,error}=await sb.from('pret_life_insurance_contracts').select('id',{count:'exact',head:true}).eq('agency',agency);
-  if(error)throw new Error(error.message);
-  return `AV-${code}-${String((count||0)+1).padStart(4,'0')}`;
+async function nextNumber(){
+  return nextSerial('pret_life_insurance_contracts','contract_number','AV-');
 }
 
 module.exports=(req,res)=>handler(req,res,async()=>{
@@ -67,15 +55,30 @@ module.exports=(req,res)=>handler(req,res,async()=>{
 
   if(req.method==='POST'){
     const b=await readBody(req),capital=Number(b.target_capital),start=realDate(b.start_date);
+    const linkError=requireUrl(b);
+    if(linkError) return json(res,400,{error:linkError});
     if(!CAPITALS.has(capital)||!start||!clean(b.subscriber_first_name)||!clean(b.subscriber_last_name)||!clean(b.beneficiary_first_name)||!clean(b.beneficiary_last_name))
       return json(res,400,{error:'Contrat incomplet ou palier invalide.'});
-    const agency=safeAgency(b.agency),payload={
-      contract_number:await nextNumber(agency),agency,subscriber_client_id:safeId(b.subscriber_client_id),
+    const enrollment=b.enrollment&&typeof b.enrollment==='object'?b.enrollment:{};
+    if(!clean(enrollment.bailiff)||!enrollment.subscriber_present||!enrollment.beneficiary_present||!enrollment.funds_coherent)
+      return json(res,400,{error:'La validation, l’huissier et les trois vérifications du banquier sont obligatoires.'});
+    const agency=safeAgency(b.agency);
+    const payments=schedule(capital,start);
+    if(enrollment.first_payment_at_signature){
+      payments[0]={...payments[0],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor.username};
+    }
+    const {stamp}=await rpStamp();
+    const payload={
+      contract_number:await nextNumber(),agency,subscriber_client_id:safeId(b.subscriber_client_id),
       subscriber_first_name:clean(b.subscriber_first_name,100),subscriber_last_name:clean(b.subscriber_last_name,100),subscriber_telegram:clean(b.subscriber_telegram,120)||null,
       beneficiary_first_name:clean(b.beneficiary_first_name,100),beneficiary_last_name:clean(b.beneficiary_last_name,100),beneficiary_telegram:clean(b.beneficiary_telegram,120)||null,
-      target_capital:capital,weekly_payment:money(capital/8),interest_rate_weekly:0.05,start_date:start,payments:schedule(capital,start),notes:clean(b.notes,2000)||null,
+      target_capital:capital,weekly_payment:money(capital/8),interest_rate_weekly:0.05,start_date:start,last_due:addDays(start,49),payments,notes:clean(b.notes,2000)||null,
+      enrollment:{...enrollment,validation_status:'Police acceptée',bailiff:clean(enrollment.bailiff,120)},
+      discord_url:clip(b.discord_url,300),discord_posted_at:null,
       created_by_id:actor.id,created_by_username:actor.username
     };
+    payload.discord_embed=lifeEmbed(payload,stamp);
+    payload.discord_text=payload.discord_embed.description;
     const {data,error}=await sb.from('pret_life_insurance_contracts').insert(payload).select().single();
     if(error)return json(res,500,{error:error.message});
     await event(data.id,'contract_created',actor.username,{contract_number:data.contract_number,target_capital:capital});
@@ -126,6 +129,8 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     }else if(action==='set_status'&&STATUSES.has(b.status)){
       return json(res,400,{error:'Les statuts sensibles doivent suivre les actions prévues.'});
     }else return json(res,400,{error:'Action inconnue.'});
+    const { lifeNotice, enqueueNotice } = require('./discord_actions');
+    Object.assign(patch, enqueueNotice(current, lifeNotice(action, { ...current, ...patch }, details)));
     const {data,error}=await sb.from('pret_life_insurance_contracts').update(patch).eq('id',id).select().single();
     if(error)return json(res,500,{error:error.message});
     await event(id,action,actor.username,details); await logAction(actor,`assurance_vie_${action}`,{contract_number:current.contract_number,...details});

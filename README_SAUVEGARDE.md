@@ -1,5 +1,9 @@
 # Sauvegarde automatique — Banque Van Horn
 
+Cette note est historique. Le registre Banque Fédérale tourne sur le Raspberry Pi avec PocketBase, selon `README.md`.
+
+
+
 Ces deux fichiers ajoutent une sauvegarde quotidienne dans Google Drive :
 
 - la base Supabase (rôles, schéma et données) ;

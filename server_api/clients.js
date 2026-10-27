@@ -19,6 +19,17 @@ function payloadFrom(body){
   return payload;
 }
 
+async function nextClientNumber(){
+  const { data, error } = await sb.from('pret_clients').select('*');
+  if(error) throw new Error(error.message);
+  let max = 0;
+  for(const row of data || []){
+    const value = Number(row.legacy_id);
+    if(Number.isInteger(value) && value > max) max = value;
+  }
+  return max + 1;
+}
+
 module.exports = (req,res)=>handler(req,res, async()=>{
   const actor = await currentUser(req);
   if(!actor) return json(res,401,{error:'Non connecté'});
@@ -39,6 +50,7 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     const body = await readBody(req);
     const payload=payloadFrom(body);
     if(!payload.nom || !payload.prenom) return json(res,400,{error:'Nom et prénom requis'});
+    payload.legacy_id = await nextClientNumber();
 
     const { data, error } = await sb.from('pret_clients').insert(payload).select().single();
     if(error) return json(res,500,{error:error.message});

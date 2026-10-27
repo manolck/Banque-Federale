@@ -1,12 +1,10 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
-
-const TYPES = new Set(['consommation','hypothecaire']);
+const { safeId } = require('./ids');
+const TYPES = new Set(['consommation','hypothecaire','pret']);
 const STATUSES = new Set(['brouillon','en_attente','validee','refusee','transformee']);
 
 function safeClientId(value){
-  if(value===undefined || value===null || value==='') return null;
-  const n=Number(value);
-  return Number.isFinite(n) && n>0 ? n : null;
+  return safeId(value);
 }
 function safeNumber(value){
   const n=Number(value);
@@ -36,6 +34,8 @@ function normalize(body, actor, existing={}){
     loan_id:text(body.loan_id),
     details:object(body.details),
     discord_text:text(body.discord_text),
+    discord_url:text(body.discord_url),
+    echeances:Array.isArray(body.echeances)?body.echeances:(Array.isArray(existing.echeances)?existing.echeances:[]),
     created_by_username:actor.username,
     updated_by_username:actor.username,
     updated_at:new Date().toISOString()

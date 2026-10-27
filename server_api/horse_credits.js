@@ -1,5 +1,6 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
-function safeClientId(v){const n=Number(v); return Number.isFinite(n)&&n>0?n:null;}
+const { letterhead, rpStamp } = require('./discord_forms');
+function safeClientId(v){return require('./ids').safeId(v);}
 function normalize(b, actor){
   const coupons_count = Math.max(1, Number.parseInt(b.coupons_count || 1, 10));
   const montant_total = 25 * coupons_count;
@@ -37,9 +38,21 @@ function normalize(b, actor){
     recommandations:String(b.recommandations||'').trim(),
     acceptations:b.acceptations && typeof b.acceptations === 'object' ? b.acceptations : {},
     discord_text:String(b.discord_text||'').trim(),
+    discord_url:String(b.discord_url||'').trim(),
     statut:String(b.statut||'en_cours').trim(),
     created_by_username:actor.username
   };
+}
+async function attachEmbed(payload){
+  if(!payload.discord_text) return payload;
+  const { stamp } = await rpStamp();
+  const who = `${payload.client_prenom || ''} ${payload.client_nom || ''}`.trim();
+  payload.discord_embed = letterhead({
+    title: `Crédit hippique — ${who}${payload.dossier_id ? ` — Dossier ${payload.dossier_id}` : ''}`,
+    description: payload.discord_text,
+    footer: stamp
+  });
+  return payload;
 }
 module.exports = (req,res)=>handler(req,res, async()=>{
   const actor = await currentUser(req);
@@ -55,6 +68,9 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     const b=await readBody(req);
     const payload=normalize(b, actor);
     if(!payload.telegram) return json(res,400,{error:'Télégramme requis'});
+    if(!require('./money').discordUrlOk(payload.discord_url)) return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
+    payload.discord_posted_at=null;
+    await attachEmbed(payload);
     const { data, error } = await sb.from('pret_horse_credits').insert(payload).select().single();
     if(error) return json(res,500,{error:error.message});
     await logAction(actor,'creation_credit_hippique',{dossier_id:data.dossier_id,client:`${data.client_prenom} ${data.client_nom}`,montant:data.montant_total});
@@ -63,8 +79,14 @@ module.exports = (req,res)=>handler(req,res, async()=>{
   if(req.method==='PUT'){
     const b=await readBody(req);
     if(!b.id) return json(res,400,{error:'ID manquant'});
+    const { data: previous } = await sb.from('pret_horse_credits').select('*').eq('id',b.id).maybeSingle();
+    if(!previous) return json(res,404,{error:'Dossier introuvable'});
     const payload=normalize(b, actor);
     delete payload.created_by_username;
+    if(!require('./money').discordUrlOk(payload.discord_url)) return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
+    await attachEmbed(payload);
+    const { horseNotice, enqueueNotice } = require('./discord_actions');
+    Object.assign(payload, enqueueNotice({ ...previous, discord_url: payload.discord_url }, horseNotice(previous, payload)));
     const { data, error } = await sb.from('pret_horse_credits').update(payload).eq('id',b.id).select().single();
     if(error) return json(res,500,{error:error.message});
     await logAction(actor,'modification_credit_hippique',{dossier_id:data.dossier_id});

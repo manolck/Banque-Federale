@@ -50,6 +50,13 @@ function safeGrade(value) {
     : 'conseiller_bancaire';
 }
 
+function publicUser(user) {
+  if (!user) return user;
+  const copy = { ...user };
+  delete copy.password_hash;
+  return copy;
+}
+
 module.exports = (req, res) =>
   handler(req, res, async () => {
     const actor = await currentUser(req);
@@ -68,7 +75,7 @@ module.exports = (req, res) =>
       if (error) return json(res, 500, { error: error.message });
 
       return json(res, 200, {
-        users: data || [],
+        users: (data || []).map(publicUser),
         assignable_role_codes: assignableRoleCodes(actor)
       });
     }
@@ -126,7 +133,7 @@ module.exports = (req, res) =>
         role_code: data.role_code
       });
 
-      return json(res, 200, data);
+      return json(res, 200, publicUser(data));
     }
 
     if (req.method === 'PUT') {
@@ -213,7 +220,7 @@ module.exports = (req, res) =>
         role_code: data.role_code
       });
 
-      return json(res, 200, data);
+      return json(res, 200, publicUser(data));
     }
 
     if (req.method === 'DELETE') {

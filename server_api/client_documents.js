@@ -3,7 +3,7 @@ const BUCKET = 'client-documents';
 const MAX_BYTES = 6 * 1024 * 1024;
 const ALLOWED = new Set(['image/jpeg','image/png','image/webp','application/pdf']);
 function safeName(name){return String(name||'document').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);}
-function safeClientId(v){const n=Number(v); return Number.isFinite(n)&&n>0?n:null;}
+function safeClientId(v){return require('./ids').safeId(v);}
 function extFromMime(mime){return {'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'}[mime] || 'bin';}
 function validUrl(u){try{const x=new URL(u);return ['http:','https:'].includes(x.protocol);}catch{return false;}}
 

@@ -17,7 +17,7 @@ function text(value, max = 160) { return String(value ?? '').trim().slice(0, max
 function norm(value) {
   return text(value, 160).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 }
-function id(value) { const n=Number(value); return Number.isSafeInteger(n)&&n>0?n:null; }
+function id(value) { return require('./ids').safeId(value); }
 
 async function findDuplicate({ telegram, clientId, prenom, nom, excludeId }) {
   if (clientId) {

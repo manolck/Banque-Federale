@@ -1,5 +1,9 @@
 # Banque Van Horn V5 — installation
 
+Cette procédure est historique. Banque Fédérale s'installe selon `README.md`, avec Node et PocketBase sur le Raspberry Pi.
+
+
+
 ## 1. Supabase
 Dans Supabase → SQL Editor → New Query, exécuter :
 

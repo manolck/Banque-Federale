@@ -6,8 +6,7 @@ const STATUSES = new Set(['prevu','confirme','termine','annule']);
 const TYPES = new Set(['etude_pret','signature','remboursement','immobilier','consultation','autre']);
 
 function safeClientId(value){
-  const id = Number(value);
-  return Number.isFinite(id) && id > 0 ? id : null;
+  return require('./ids').safeId(value);
 }
 function clean(value, max=1000){
   return String(value || '').trim().slice(0,max);

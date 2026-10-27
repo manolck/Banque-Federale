@@ -34,8 +34,7 @@ function cleanText(value, max = 500) {
 }
 
 function safeId(value) {
-  const number = Number(value);
-  return Number.isSafeInteger(number) && number > 0 ? number : null;
+  return require('./ids').safeId(value);
 }
 
 function isRealIsoDate(value) {
@@ -72,7 +71,7 @@ async function listClients(req, res) {
     .limit(250);
 
   if (error) return json(res, 500, { error: error.message });
-  if(requestedId) return json(res,200,(data||[]).filter(client=>Number(client.id)===requestedId));
+  if(requestedId) return json(res,200,(data||[]).filter(client=>String(client.id)===String(requestedId)));
   const clients = (data || []).filter((client) => {
     if (!search) return true;
     const haystack = `${client.prenom || ''} ${client.nom || ''} ${client.telegram || ''} ${client.adresse || ''}`
@@ -204,7 +203,7 @@ async function updateAppointmentStatus(req, res) {
 
 module.exports = (req, res) => handler(req, res, async () => {
   if (!process.env.DISCORD_AGENDA_API_KEY) {
-    return json(res, 503, { error: 'DISCORD_AGENDA_API_KEY n’est pas configurée sur Vercel.' });
+    return json(res, 503, { error: 'DISCORD_AGENDA_API_KEY n’est pas configurée.' });
   }
   if (!isAuthorized(req)) return json(res, 401, { error: 'Clé Discord invalide.' });
 

@@ -1,10 +1,6 @@
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
 const permissions = require('./permissions');
-
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false }
-});
+const { sb } = require('./pocket');
 
 const SESSION_COOKIE = 'bvh_session';
 const DAY = 86400;
@@ -35,7 +31,7 @@ function parseCookies(req){
 
 function secret(){
   if(!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32){
-    throw new Error('SESSION_SECRET manquant ou trop court dans Vercel Environment Variables. Minimum 32 caractères.');
+    throw new Error('SESSION_SECRET manquant ou trop court. Minimum 32 caractères.');
   }
   return process.env.SESSION_SECRET;
 }
@@ -63,18 +59,39 @@ function cookieOptions(maxAge=7*DAY){
 function setSessionCookie(res, token){ res.setHeader('Set-Cookie', cookieOptions().replace('__VALUE__', encodeURIComponent(token))); }
 function clearSessionCookie(res){ res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`); }
 
+function discordAuthDisabled(){
+  const value = String(process.env.DISCORD_AUTH ?? 'off').trim().toLowerCase();
+  return value === 'off' || value === '0' || value === 'false' || value === 'disabled';
+}
+
+function localUser(){
+  return {
+    id: 'local-banque',
+    username: 'Registre',
+    role: 'directeur',
+    role_code: 'DIRECTOR',
+    is_active: true,
+    protected: true,
+    agency: 'van_horn',
+    agency_grade: null,
+    discord_id: null,
+    discord_display_name: null
+  };
+}
+
 async function currentUser(req){
+  if(discordAuthDisabled()) return localUser();
   const cookies=parseCookies(req);
   const data=verifyToken(cookies[SESSION_COOKIE]);
   if(!data) return null;
   const { data:user, error } = await sb.from('pret_users').select('id,username,role,role_code,is_active,protected,agency,agency_grade,discord_id,discord_display_name').eq('id', data.id).maybeSingle();
   if(error || !user || user.is_active===false) return null;
   if(permissions.roleCodeOf(user)==='PENDING_ASSIGNMENT') return null;
+  delete user.password_hash;
   return user;
 }
 
 function roleRank(userOrRole){ return permissions.roleLevel(userOrRole); }
-function requireRole(user, min){ return user && permissions.roleLevel(user) >= permissions.roleLevel(min); }
 const canManageUsers = permissions.canManageUsers;
 const canModifyTarget = permissions.canModifyTarget;
 const allowedCreateRole = permissions.allowedCreateRole;
@@ -104,8 +121,8 @@ async function handler(req,res,fn){
 }
 
 module.exports={
-  sb,json,readBody,currentUser,setSessionCookie,clearSessionCookie,createToken,logAction,
-  requireRole,canManageUsers,canModifyTarget,allowedCreateRole,roleRank,hasPermission,roleCodeOf,
+  sb,json,readBody,currentUser,discordAuthDisabled,setSessionCookie,clearSessionCookie,createToken,logAction,
+  canManageUsers,canModifyTarget,allowedCreateRole,roleRank,hasPermission,roleCodeOf,
   ROLE_DEFINITIONS:permissions.ROLE_DEFINITIONS,
   legacyRoleForCode:permissions.legacyRoleForCode,
   assignableRoleCodes:permissions.assignableRoleCodes,

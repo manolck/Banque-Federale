@@ -1,5 +1,9 @@
 # Installation V9 consolidée
 
+Cette procédure est historique. Banque Fédérale s'installe selon `README.md`, avec Node et PocketBase sur le Raspberry Pi.
+
+
+
 1. Vérifier les sauvegardes du site et du bot.
 2. Dans Supabase > SQL Editor, exécuter `database/discord_auth_v9.sql`.
 3. Copier le contenu du ZIP du site dans le dossier local, sans remplacer `.env.local`.

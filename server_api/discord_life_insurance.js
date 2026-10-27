@@ -1,23 +1,23 @@
 const { timingSafeEqual } = require('node:crypto');
 const { sb, json, readBody, handler } = require('./_lib');
+const { lifeFinancials, lifeAsOf } = require('./money');
 
 function token(req){const h=String(req.headers?.authorization||'');return h.startsWith('Bearer ')?h.slice(7).trim():'';}
 function equal(a,b){const x=Buffer.from(String(a||'')),y=Buffer.from(String(b||''));return x.length===y.length&&x.length>0&&timingSafeEqual(x,y);}
 function clean(v,n=120){return String(v??'').trim().slice(0,n);}
-function id(v){const n=Number(v);return Number.isSafeInteger(n)&&n>0?n:null;}
+function id(v){return require('./ids').safeId(v);}
 function money(v){return Math.round((Number(v)+Number.EPSILON)*100)/100;}
-function weeks(from){const d=new Date(`${String(from).slice(0,10)}T12:00:00Z`);return Number.isNaN(d.getTime())?0:Math.max(0,Math.floor((Date.now()-d.getTime())/604800000));}
-function financials(c){const paid=(c.payments||[]).filter(p=>p.status==='paid'&&p.paid_at);const principal=money(paid.reduce((s,p)=>s+Number(p.amount||0),0));const interest=money(paid.reduce((s,p)=>s+Number(p.amount||0)*0.05*weeks(p.paid_at),0));return{principal,interest,balance:money(principal+interest),paid_installments:paid.length};}
+function financials(c){return lifeFinancials(c && c.payments, lifeAsOf(c));}
 function out(c){return{...c,financials:financials(c)};}
 function addDays(date,days){const d=new Date(`${date}T12:00:00Z`);d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);}
 function validDate(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!Number.isNaN(new Date(`${v}T12:00:00Z`).getTime());}
 function agency(v){return ['van_horn','saint_denis','rhodes','valentine','blackwater','strawberry','sunset'].includes(v)?v:'van_horn';}
-async function numberFor(a){const code={van_horn:'VH',saint_denis:'SD',rhodes:'RH',valentine:'VT',blackwater:'BW',strawberry:'ST',sunset:'SS'}[a];const {count}=await sb.from('pret_life_insurance_contracts').select('id',{count:'exact',head:true}).eq('agency',a);return `AV-${code}-${String((count||0)+1).padStart(4,'0')}`;}
+async function numberFor(){const {nextSerial}=require('./discord_forms');return nextSerial('pret_life_insurance_contracts','contract_number','AV-');}
 async function audit(contractId,type,actor,details={}){await sb.from('pret_life_insurance_events').insert({contract_id:contractId,event_type:type,actor_username:actor,details:{source:'discord',...details}});}
 
 module.exports=(req,res)=>handler(req,res,async()=>{
   const expected=String(process.env.DISCORD_AGENDA_API_KEY||'').trim();
-  if(!expected)return json(res,503,{error:'La clé API privée Discord n’est pas configurée sur Vercel.'});
+  if(!expected)return json(res,503,{error:'La clé API privée Discord n’est pas configurée.'});
   if(!equal(token(req),expected))return json(res,401,{error:'Clé Discord invalide.'});
   if(req.method==='GET'){
     const q=clean(req.query?.q,100).toLocaleLowerCase('fr');
@@ -33,7 +33,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     if(!clientId||![1000,2500,5000,7500,10000].includes(capital)||!validDate(start)||!clean(b.beneficiary_first_name)||!clean(b.beneficiary_last_name))return json(res,400,{error:'Données de création incomplètes.'});
     const {data:client,error:ce}=await sb.from('pret_clients').select('id,prenom,nom,telegram').eq('id',clientId).maybeSingle();if(ce)return json(res,500,{error:ce.message});if(!client)return json(res,404,{error:'Client introuvable.'});
     const a=agency(b.agency),amount=money(capital/8),payments=Array.from({length:8},(_,i)=>({number:i+1,date:addDays(start,i*7),amount,status:'pending',paid_at:null}));
-    const payload={contract_number:await numberFor(a),agency:a,subscriber_client_id:client.id,subscriber_first_name:clean(client.prenom),subscriber_last_name:clean(client.nom),subscriber_telegram:clean(client.telegram)||null,beneficiary_first_name:clean(b.beneficiary_first_name),beneficiary_last_name:clean(b.beneficiary_last_name),beneficiary_telegram:clean(b.beneficiary_telegram)||null,target_capital:capital,weekly_payment:amount,interest_rate_weekly:.05,start_date:start,payments,created_by_username:actor};
+    const payload={contract_number:await numberFor(),agency:a,subscriber_client_id:client.id,subscriber_first_name:clean(client.prenom),subscriber_last_name:clean(client.nom),subscriber_telegram:clean(client.telegram)||null,beneficiary_first_name:clean(b.beneficiary_first_name),beneficiary_last_name:clean(b.beneficiary_last_name),beneficiary_telegram:clean(b.beneficiary_telegram)||null,target_capital:capital,weekly_payment:amount,interest_rate_weekly:.05,start_date:start,last_due:addDays(start,49),payments,created_by_username:actor};
     const {data,error}=await sb.from('pret_life_insurance_contracts').insert(payload).select().single();if(error)return json(res,500,{error:error.message});await audit(data.id,'contract_created',actor,{target_capital:capital});return json(res,201,out(data));
   }
   if(req.method==='PUT'){

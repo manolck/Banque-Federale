@@ -1,14 +1,13 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
+const { safeId } = require('./ids');
+const { buildSchedule, discordUrlOk, moneyFr, dateFr } = require('./money');
+const { letterhead, rpStamp } = require('./discord_forms');
 
 function safeClientId(v){
-  if(v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return safeId(v);
 }
 function safeApplicationId(v){
-  if(v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  return safeId(v);
 }
 function safeAgence(v){
   const value = String(v || 'van_horn').trim();
@@ -146,11 +145,29 @@ async function insertLoanWithUniqueId(basePayload, bank_code){
     Si deux banquiers enregistrent exactement au même moment, Supabase protège avec l'index unique,
     puis on réessaie automatiquement avec le numéro suivant.
   */
+  const { stamp } = await rpStamp();
   let lastError = null;
 
   for(let attempt = 0; attempt < 30; attempt++){
     const loan_id = await generateLoanId(bank_code, attempt);
     const payload = { ...basePayload, loan_id };
+    if(payload.discord_url){
+      const who = `${payload.prenom} ${String(payload.nom||'').toUpperCase()}`;
+      payload.discord_text=[
+        `## DÉTAILS PERSONNELS - ${who} ##`,
+        `**Dossier :** ${loan_id}`,
+        `**Télégramme :** ${payload.telegram||''}`,
+        `**Somme prêtée :** ${moneyFr(payload.somme)}`,
+        `**Taux par échéance :** ${payload.taux} %`,
+        `**Total à rembourser :** ${moneyFr(payload.total_a_rembourser)}`,
+        ...(payload.echeances||[]).map((item,index)=>`**Échéance ${index+1} :** ${moneyFr(item.montant)} le ${dateFr(item.date)}`)
+      ].join('\n');
+      payload.discord_embed=letterhead({
+        title: `Prêt — ${who} — Dossier ${loan_id}`,
+        description: payload.discord_text,
+        footer: stamp
+      });
+    }
 
     const { data, error } = await sb
       .from('pret_loans')
@@ -202,6 +219,9 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     if(!b.nom || !b.prenom || !b.somme || b.taux===undefined || !b.echeances) {
       return json(res,400,{error:'Données prêt incomplètes'});
     }
+    if(!b.id && !discordUrlOk(b.discord_url)) {
+      return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
+    }
 
     const agence = safeAgence(b.agence || b.bank_code);
     const bank_code = bankCodeFrom(agence);
@@ -225,8 +245,17 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       echeances:safeEcheances(b.echeances),
       banquier_id:actor.id,
       banquier_username:actor.username,
-      date_creation:b.date_creation || new Date().toISOString().split('T')[0]
+      date_creation:b.date_creation || new Date().toISOString().split('T')[0],
+      discord_url:String(b.discord_url||'').trim(),
+      discord_posted_at:null
     };
+    const periods=parseInt(b.nb || (payload.echeances||[]).length, 10);
+    const start=b.date1 || (payload.echeances[0] && payload.echeances[0].date);
+    if(periods && start){
+      const built=buildSchedule(payload.somme, payload.taux, periods, start);
+      payload.echeances=built.echeances;
+      payload.total_a_rembourser=built.total;
+    }
 
     let data;
     try{
@@ -273,6 +302,13 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     if(b.recouvrement_notes !== undefined) patch.recouvrement_notes=safeText(b.recouvrement_notes);
     if(b.recouvrement_started_at !== undefined) patch.recouvrement_started_at=safeNullableDate(b.recouvrement_started_at);
     if(b.echeances !== undefined) patch.echeances=safeEcheances(b.echeances);
+    if(b.discord_url !== undefined){
+      if(!discordUrlOk(b.discord_url)) return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
+      patch.discord_url=String(b.discord_url).trim();
+      if(patch.discord_url !== old.discord_url) patch.discord_posted_at=null;
+    }
+    const { loanNotice, enqueueNotice } = require('./discord_actions');
+    Object.assign(patch, enqueueNotice({ ...old, discord_url: patch.discord_url || old.discord_url }, loanNotice(old, patch)));
 
     const { data, error } = await sb
       .from('pret_loans')
