@@ -1,6 +1,26 @@
+# Dépendances (réinstallées par npm install)
 node_modules/
-.vercel
-.env*
+
+# Secrets et configuration locale
+.env
+.env.*
+!.env.example
+
+# Base PocketBase, binaire et sauvegardes locales
 .local/
+pb_data/
+*.db
+*.db-wal
+*.db-shm
+pocketbase.exe
+pocketbase.zip
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Outils
+.vercel
