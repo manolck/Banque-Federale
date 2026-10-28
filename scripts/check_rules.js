@@ -217,14 +217,50 @@ assert.strictEqual(market.slotReached(fridayEvening, '2026-10-30'), true);
 assert.strictEqual(market.dueFriday(market.initialMarket(tuesday), tuesday), '');
 assert.strictEqual(market.dueFriday({ next: '2026-10-30' }, fridayEvening), '2026-10-30');
 assert.strictEqual(market.dueFriday({ next: '2026-10-30' }, new Date('2026-10-31T12:00:00Z')), '2026-10-30');
-const gainEmbed = market.marketEmbed('I', { final: 2.1, label: 'Marché calme' }, { dossiers: 3, before: 1000, after: 1021 }, '2026-10-30', '2026-11-06');
-assert.strictEqual(gainEmbed.author.name, 'Interstate Banking & Trust Company');
-assert.strictEqual(gainEmbed.color, 0x1f8b4c);
-assert.ok(gainEmbed.title.includes('Palier I'));
-assert.ok(gainEmbed.description.includes('Marché calme'));
-assert.ok(gainEmbed.description.includes('30/10/2026'));
-assert.ok(gainEmbed.description.includes('18 h'));
-const lossEmbed = market.marketEmbed('III', { final: -4.2, label: 'Panique sur les marchés' }, { dossiers: 1, before: 100, after: 95.8 }, '2026-10-30', '2026-11-06');
-assert.strictEqual(lossEmbed.color, 0x8b642c);
+const calm = engine.issueSemaine('I', engine.etatInitial());
+assert.ok(Math.abs(calm.hausse + calm.baisse + calm.neutre - 1) < 1e-9);
+assert.ok(calm.hausse > calm.baisse);
+const guardedIssue = engine.issueSemaine('I', { regime: 'stable', serie: -3 });
+assert.strictEqual(guardedIssue.baisse, 0);
+assert.ok(guardedIssue.hausse > guardedIssue.neutre);
+const sameStreak = { I: { regime: 'stable', serie: 2 }, II: { regime: 'stable', serie: 2 }, III: { regime: 'expansion', serie: 2 } };
+const board = market.marketEmbed({
+  on: '2026-10-30',
+  results: { I: { final: -3 }, II: { final: -5 }, III: { final: -9.5 } },
+  avant: sameStreak,
+  apres: { I: engine.etatInitial(), II: engine.etatInitial(), III: engine.etatInitial() }
+});
+assert.strictEqual(board.title, 'Haussmann Capital Partners');
+assert.strictEqual(board.color, 0x1f8b4c);
+assert.ok(!board.author);
+assert.ok(board.description.includes('Haussmann Asset Management'));
+assert.ok(board.description.includes('selon son palier'));
+assert.strictEqual(board.fields.length, 5);
+assert.strictEqual(board.fields[0].name, 'Palier I');
+assert.strictEqual(board.fields[0].inline, true);
+assert.ok(board.fields[0].value.includes('**-3.0%**'));
+assert.ok(board.fields[0].value.includes('-3.0% à +9.0%'));
+assert.ok(board.fields[1].value.includes('**-5.0%**'));
+assert.ok(board.fields[1].value.includes('-5.0% à +15.0%'));
+assert.ok(board.fields[2].value.includes('**-9.5%**'));
+assert.ok(board.fields[2].value.includes('-15.0% à +30.0%'));
+assert.strictEqual(board.fields[3].name, 'Projection semaine prochaine');
+const shares = board.fields[3].value.match(/Hausse : \*\*(\d+\.\d+)%\*\* · Baisse : \*\*(\d+\.\d+)%\*\* · Neutre : \*\*(\d+\.\d+)%\*\*/);
+assert.ok(shares);
+assert.ok(Math.abs(Number(shares[1]) + Number(shares[2]) + Number(shares[3]) - 100) < 0.011);
+assert.strictEqual(board.fields[4].name, 'Contexte marché');
+assert.strictEqual(board.fields[4].value, "2 semaines de hausse d'affilée avant ce tirage.");
+assert.ok(board.footer.text.includes('perte partielle ou totale'));
+assert.ok(board.footer.text.includes('30/10/2026 18:00'));
+const split = market.marketEmbed({
+  on: '2026-10-30',
+  results: { I: { final: 1 }, II: { final: -1 }, III: { final: 0 } },
+  avant: { I: { serie: 2 }, II: { serie: -1 }, III: { serie: 0 } },
+  apres: sameStreak
+});
+assert.ok(split.fields[4].value.includes("Palier I : 2 semaines de hausse d'affilée avant ce tirage."));
+assert.ok(split.fields[4].value.includes('Palier II : 1 semaine de baisse avant ce tirage.'));
+assert.ok(split.fields[4].value.includes('Palier III : aucune série en cours avant ce tirage.'));
+assert.ok(split.fields[2].value.includes('**0.0%**'));
 
 console.log('Règles Banque Fédérale : calculs conformes.');

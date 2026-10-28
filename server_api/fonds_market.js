@@ -1,7 +1,6 @@
 const { sb, json, currentUser, hasPermission, handler } = require('./_lib');
-const { money, moneyFr, dateFr, addDays, fundCapital } = require('./money');
-const { letterhead } = require('./discord_forms');
-const { PALIERS, TIER_OF, LIBELLES, etatInitial, tirageSemaine } = require('./fonds_engine');
+const { money, dateFr, addDays, fundCapital } = require('./money');
+const { PALIERS, TIER_OF, LIBELLES, CONFIG, etatInitial, tirageSemaine, issueSemaine } = require('./fonds_engine');
 
 const SETTING_KEY = 'fonds_market';
 const WEEKDAYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -104,22 +103,122 @@ function addTotal(totals, tier, line) {
   bucket.after = money(bucket.after + Number(line.capital_after || 0));
 }
 
-function marketEmbed(nom, draw, total, friday, next) {
-  const bucket = total || { dossiers: 0, before: 0, after: 0 };
-  return letterhead({
-    title: `Relevé hebdomadaire — Palier ${nom}`,
-    color: Number(draw.final) >= 0 ? 0x1f8b4c : 0x8b642c,
+function dotPercent(value, digits) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  const text = Math.abs(number).toFixed(digits);
+  if (number > 0) return `+${text}%`;
+  if (number < 0) return `-${text}%`;
+  return `${(0).toFixed(digits)}%`;
+}
+
+function snapshot(etats) {
+  const copy = {};
+  for (const nom of PALIERS) {
+    const etat = (etats && etats[nom]) || etatInitial();
+    copy[nom] = { regime: etat.regime || 'stable', serie: Number(etat.serie) || 0 };
+  }
+  return copy;
+}
+
+function projectionMoyenne(etats) {
+  const sum = { hausse: 0, baisse: 0, neutre: 0 };
+  for (const nom of PALIERS) {
+    const part = issueSemaine(nom, (etats && etats[nom]) || etatInitial());
+    sum.hausse += part.hausse;
+    sum.baisse += part.baisse;
+    sum.neutre += part.neutre;
+  }
+  return {
+    hausse: sum.hausse / PALIERS.length,
+    baisse: sum.baisse / PALIERS.length,
+    neutre: sum.neutre / PALIERS.length
+  };
+}
+
+function partages(parts) {
+  const keys = ['hausse', 'baisse', 'neutre'];
+  const points = keys.map((key) => Math.round(Number(parts[key]) * 10000));
+  const drift = 10000 - points.reduce((total, value) => total + value, 0);
+  let index = 0;
+  points.forEach((value, cursor) => { if (value > points[index]) index = cursor; });
+  points[index] += drift;
+  return {
+    hausse: (points[0] / 100).toFixed(2),
+    baisse: (points[1] / 100).toFixed(2),
+    neutre: (points[2] / 100).toFixed(2)
+  };
+}
+
+function projectionPhrase(hausse, baisse) {
+  const ecart = Math.abs(hausse - baisse) * 100;
+  const biais = ecart < 10
+    ? 'Un mouvement modéré est le plus probable, sans biais marqué.'
+    : hausse > baisse
+      ? 'Une hausse est le scénario le plus probable, avec un biais marqué.'
+      : 'Une baisse est le scénario le plus probable, avec un biais marqué.';
+  return `${biais} Un gros écart reste possible, mais peu probable.`;
+}
+
+function streakSentence(serie) {
+  const value = Number(serie) || 0;
+  const count = Math.abs(value);
+  if (!count) return 'Aucune série en cours avant ce tirage.';
+  const sens = value > 0 ? 'hausse' : 'baisse';
+  const semaines = count === 1 ? '1 semaine' : `${count} semaines`;
+  const affilee = count > 1 ? " d'affilée" : '';
+  return `${semaines} de ${sens}${affilee} avant ce tirage.`;
+}
+
+function contexteTexte(avant) {
+  const lines = PALIERS.map((nom) => streakSentence(avant && avant[nom] ? avant[nom].serie : 0));
+  if (lines.every((line) => line === lines[0])) return lines[0];
+  return PALIERS.map((nom, index) => {
+    const text = lines[index];
+    return `Palier ${nom} : ${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+  }).join('\n');
+}
+
+function marketEmbed(week) {
+  const board = week || {};
+  const results = board.results || {};
+  const parts = projectionMoyenne(board.apres);
+  const shown = partages(parts);
+  const when = dateFr(board.on);
+  return {
+    title: 'Haussmann Capital Partners',
+    color: 0x1f8b4c,
     description: [
-      `**Séance :** ${dateFr(friday)}`,
-      `**Résultat :** ${percentFr(draw.final)}`,
-      `**Régime :** ${draw.label || LIBELLES[draw.regime] || ''}`,
-      `**Dossiers ouverts :** ${bucket.dossiers}`,
-      `**Capital avant :** ${moneyFr(bucket.before)}`,
-      `**Capital après :** ${moneyFr(bucket.after)}`,
-      `**Prochaine séance :** ${dateFr(next)} à 18 h`
+      'Publication hebdomadaire des résultats des fonds spéculatifs opérés par Haussmann Asset Management.',
+      'Ces résultats s\'appliquent automatiquement au relevé de chaque client selon son palier.'
     ].join('\n'),
-    footer: 'Risque de perte partielle ou totale du capital.'
-  });
+    fields: PALIERS.map((nom) => {
+      const [lo, hi] = CONFIG[nom].bornes;
+      const final = results[nom] && results[nom].final;
+      return {
+        name: `Palier ${nom}`,
+        inline: true,
+        value: `Résultat : **${dotPercent(final, 1)}**\nPlage : ${dotPercent(lo, 1)} à ${dotPercent(hi, 1)}`
+      };
+    }).concat([
+      {
+        name: 'Projection semaine prochaine',
+        inline: false,
+        value: [
+          projectionPhrase(parts.hausse, parts.baisse),
+          `Hausse : **${shown.hausse}%** · Baisse : **${shown.baisse}%** · Neutre : **${shown.neutre}%**`
+        ].join('\n')
+      },
+      {
+        name: 'Contexte marché',
+        inline: false,
+        value: contexteTexte(board.avant)
+      }
+    ]),
+    footer: {
+      text: `Le capital investi demeure exposé à un risque de perte partielle ou totale selon les conditions du marché. • ${when} 18:00`
+    }
+  };
 }
 
 function channelId() {
@@ -159,19 +258,17 @@ function queueMarkets(state) {
     if (!data || !data.applied || !data.results) continue;
     data.posted = data.posted || {};
     data.claims = data.claims || {};
-    for (const nom of PALIERS) {
-      if (data.posted[nom]) continue;
-      const claimed = Date.parse(data.claims[nom] || '');
-      if (Number.isFinite(claimed) && now - claimed < 120000) continue;
-      data.claims[nom] = new Date(now).toISOString();
-      dirty = true;
-      items.push({
-        channel_id: channel,
-        week,
-        palier: nom,
-        embed: marketEmbed(nom, data.results[nom], data.totals && data.totals[nom], week, state.next)
-      });
-    }
+    if (data.posted.releve || PALIERS.every((nom) => data.posted[nom])) continue;
+    const claimed = Date.parse(data.claims.releve || '');
+    if (Number.isFinite(claimed) && now - claimed < 120000) continue;
+    data.claims.releve = new Date(now).toISOString();
+    dirty = true;
+    items.push({
+      channel_id: channel,
+      week,
+      palier: 'releve',
+      embed: marketEmbed({ on: week, results: data.results, avant: data.avant, apres: data.apres })
+    });
   }
   return { items, dirty };
 }
@@ -204,6 +301,7 @@ async function settleFunds(funds, date) {
   const friday = dueFriday(state, now);
   if (friday) {
     if (!state.weeks[friday]) {
+      const avant = snapshot(state.etats);
       const drawn = tirageSemaine(state.etats);
       const results = {};
       for (const nom of PALIERS) {
@@ -214,7 +312,15 @@ async function settleFunds(funds, date) {
           p_gain: drawn.details[nom].p_gain
         };
       }
-      state.weeks[friday] = { results, applied: false, posted: {}, claims: {}, totals: null };
+      state.weeks[friday] = {
+        results,
+        avant,
+        apres: snapshot(drawn.etats),
+        applied: false,
+        posted: {},
+        claims: {},
+        totals: null
+      };
       state.etats = drawn.etats;
       await saveState(state);
       dirty = false;
@@ -249,13 +355,16 @@ async function settleFunds(funds, date) {
 }
 
 async function acknowledgeMarket(week, palier, messageId) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(week || '')) || !PALIERS.includes(palier)) {
+  const releve = palier === 'releve';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(week || '')) || (!releve && !PALIERS.includes(palier))) {
     return { status: 400, error: 'Accusé de séance incomplet.' };
   }
   const state = await loadState();
   const data = state && state.weeks && state.weeks[week];
   if (!data) return { status: 404, error: 'Séance introuvable.' };
-  data.posted = { ...(data.posted || {}), [palier]: messageId || 'posted' };
+  const posted = { ...(data.posted || {}), [palier]: messageId || 'posted' };
+  if (releve) for (const nom of PALIERS) posted[nom] = messageId || 'posted';
+  data.posted = posted;
   await saveState(state);
   return { ok: true };
 }

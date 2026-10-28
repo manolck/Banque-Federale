@@ -90,6 +90,45 @@ function pPositif(mu, sd) {
   return 0.5 * (1 + erf(mu / (sd * Math.sqrt(2))));
 }
 
+function normalCdf(x, mu, sd) {
+  return 0.5 * (1 + erf((x - mu) / (sd * Math.SQRT2)));
+}
+
+function issueGauss(mu, sd, guard) {
+  if (guard) {
+    const cut = 0.05 / 0.3;
+    return {
+      hausse: normalCdf(-cut, mu, sd) + (1 - normalCdf(0.05, mu, sd)),
+      baisse: 0,
+      neutre: normalCdf(0.05, mu, sd) - normalCdf(-cut, mu, sd)
+    };
+  }
+  const baisse = normalCdf(-0.05, mu, sd);
+  return {
+    hausse: 1 - normalCdf(0.05, mu, sd),
+    baisse,
+    neutre: normalCdf(0.05, mu, sd) - baisse
+  };
+}
+
+function issueSemaine(nom, etat) {
+  const cfg = CONFIG[nom];
+  if (!cfg) throw new Error(`Palier inconnu : ${nom}`);
+  const current = etat && etat.regime ? etat : etatInitial();
+  const serie = Number(current.serie) || 0;
+  const weights = transitionsAjustees(cfg, current.regime, serie);
+  const guard = serie <= -cfg.serie_max;
+  const total = { hausse: 0, baisse: 0, neutre: 0 };
+  for (const [regime, weight] of Object.entries(weights)) {
+    const [mu, sd] = cfg.regimes[regime];
+    const part = issueGauss(mu, sd, guard);
+    total.hausse += weight * part.hausse;
+    total.baisse += weight * part.baisse;
+    total.neutre += weight * part.neutre;
+  }
+  return total;
+}
+
 function roundDigits(value, digits) {
   const factor = 10 ** digits;
   return Math.round((value + Number.EPSILON) * factor) / factor;
@@ -215,5 +254,5 @@ function tirageSemaine(etats, evenements = null, rng = null) {
 
 module.exports = {
   CONFIG, HAUSSIERS, LIBELLES, PALIERS, TIER_OF,
-  clamp, pPositif, transitionsAjustees, tiragePalier, tirageSemaine, etatInitial, weightedChoice
+  clamp, pPositif, transitionsAjustees, tiragePalier, tirageSemaine, etatInitial, weightedChoice, issueSemaine
 };

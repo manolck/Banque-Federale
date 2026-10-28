@@ -100,7 +100,7 @@ async function postNotice(client, item) {
 async function postMarket(client, item) {
   const channel = await client.channels.fetch(item.channel_id);
   const embed = richEmbed(item.embed);
-  const message = await channel.send(embed ? { embeds: [embed] } : { content: `Palier ${item.palier}` });
+  const message = await channel.send(embed ? { embeds: [embed] } : { content: 'Haussmann Capital Partners' });
   await api('POST', { kind: 'market', week: item.week, palier: item.palier, message_id: message.id });
 }
 
