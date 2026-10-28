@@ -492,6 +492,60 @@ function missionTitle(row, echeance) {
   return `${state} | ${number} | ${name}`.slice(0, 100);
 }
 
+const RECEIPT_FORUMS = {
+  pret_loans: '1506280056488722483',
+  pret_consigne_contracts: '1506297488724725812',
+  pret_speculative_funds: '1513571647817257020',
+  pret_horse_credits: '1514364208479998114',
+  pret_payroll_contracts: '1519112605434904627',
+  pret_life_insurance_contracts: '1532771839418564731',
+  pret_pawn_loans: '1560021701427724298',
+  pret_term_savings: '1562932945193402378'
+};
+
+function receiptAgencies(row) {
+  const list = Array.isArray(row.agencies) && row.agencies.length ? row.agencies : [row.agence || row.agency];
+  return list.filter((item) => AGENCIES.includes(item));
+}
+
+function receiptState(row) {
+  return [...new Set(receiptAgencies(row).map((agency) => stateLabel(agency)))].join(' / ');
+}
+
+function receiptName(row) {
+  if (row.client_nom || row.client_prenom) return `${row.client_nom || ''} ${row.client_prenom || ''}`.replace(/\s+/g, ' ').trim();
+  if (row.subscriber_last_name || row.subscriber_first_name) return `${row.subscriber_last_name || ''} ${row.subscriber_first_name || ''}`.replace(/\s+/g, ' ').trim();
+  if (row.company_name) return String(row.company_name).trim();
+  if (row.full_name) return String(row.full_name).trim();
+  return `${row.nom || ''} ${row.prenom || ''}`.replace(/\s+/g, ' ').trim();
+}
+
+function receiptTitle(row) {
+  const number = row.contract_number || row.dossier_number || row.loan_id || row.dossier_id || row.id || '';
+  return [receiptState(row), number, receiptName(row)].filter(Boolean).join(' | ').slice(0, 100);
+}
+
+function receiptTags(collection, row) {
+  const city = AGENCY_LABELS[receiptAgencies(row)[0]] || '';
+  if (collection === 'pret_loans') return ['Nouveau', city].filter(Boolean);
+  if (collection === 'pret_life_insurance_contracts') return ['Période de versement'];
+  if (collection === 'pret_speculative_funds') {
+    const tags = [row.tier, city].filter(Boolean);
+    const distribution = String(row.profit_distribution || '').toLocaleLowerCase('fr');
+    if (distribution.includes('versement')) tags.push('Versement Hebdo');
+    else if (distribution.includes('réinvest') || distribution.includes('reinvest') || distribution.includes('ré-invest')) tags.push('Ré-investissement');
+    return tags;
+  }
+  if (collection === 'pret_horse_credits') {
+    if (row.statut === 'termine') return ['Remboursé'];
+    if (row.statut === 'refuse') return [];
+    return ['Pari en cours'];
+  }
+  if (collection === 'pret_payroll_contracts') return ['Ouvert'];
+  if (collection === 'pret_consigne_contracts') return row.dossier_offered ? ['Ouvert', 'OFFERT'] : ['Ouvert'];
+  return [];
+}
+
 function quotePawn(body) {
   const rate = body.rate_mode === 'autre' ? Number(body.rate) : 15;
   const quoted = pawnQuote(body.amount, rate);
@@ -574,5 +628,6 @@ module.exports = {
   text, requireText, requireUrl, discordUrlOk, letterhead, embedFromText,
   lifeEmbed, fondsEmbed, pawnText, pawnEmbed, consigneEmbed, termEmbed, payrollEmbed, goldsteinEmbed,
   consigneText, termText, payrollText, goldsteinText, missionText, missionTitle, missionEmbed,
+  RECEIPT_FORUMS, receiptTitle, receiptTags,
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein, money
 };

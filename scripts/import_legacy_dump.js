@@ -13,7 +13,6 @@ const IMPORTS = {
   pret_loans: 'l',
   pret_client_notes: 'n',
   pret_client_documents: 'd',
-  pret_credit_applications: 'r',
   pret_horse_credits: 'h',
   pret_life_insurance_contracts: 'v',
   pret_life_insurance_events: 'e',
@@ -26,12 +25,10 @@ const FOREIGN_KEYS = {
   pret_clients: { banquier_id: 'pret_users' },
   pret_loans: {
     client_id: 'pret_clients',
-    banquier_id: 'pret_users',
-    application_id: 'pret_credit_applications'
+    banquier_id: 'pret_users'
   },
   pret_client_notes: { client_id: 'pret_clients' },
   pret_client_documents: { client_id: 'pret_clients' },
-  pret_credit_applications: { client_id: 'pret_clients' },
   pret_horse_credits: { client_id: 'pret_clients' },
   pret_life_insurance_contracts: {
     subscriber_client_id: 'pret_clients',

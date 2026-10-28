@@ -184,11 +184,6 @@ function Flag({ label, checked, onChange }) {
   </label>;
 }
 
-function discordField(form, setForm) {
-  const { Inp } = bfKit();
-  return <Inp label="Lien Discord" value={form.discord_url || ''} onChange={(event) => setForm({ ...form, discord_url: event.target.value })} placeholder="https://discord.com/channels/…" />;
-}
-
 function AgencySelect({ label, value, onChange, consigne }) {
   const { Select, AGENCIES } = bfKit();
   const entries = consigne ? BF_CONSIGNE : BF_AGENCY_ORDER.map((key) => [key, (AGENCIES || {})[key] || key]);
@@ -813,7 +808,6 @@ const BF_SERVICES = {
           <Flag label="Exactitude des informations" checked={form.declare_accuracy} onChange={(value) => setForm({ ...form, declare_accuracy: value })} />
           <Flag label="Conditions générales acceptées" checked={form.declare_terms} onChange={(value) => setForm({ ...form, declare_terms: value })} />
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   },
@@ -844,7 +838,6 @@ const BF_SERVICES = {
           {form.rate_mode === 'autre' && <Inp label="Taux exceptionnel (%)" type="number" value={form.rate || ''} onChange={on('rate')} />}
           <Span><Choice label="Taux d'intérêt de remboursement" value={form.rate_mode || '15'} options={[{ value: '15', label: '15 %' }, { value: 'autre', label: 'autre (cas exceptionnel)' }]} onChange={(value) => setForm({ ...form, rate_mode: value })} /></Span>
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   },
@@ -883,7 +876,6 @@ const BF_SERVICES = {
           </>}
           <Span><Flag label="Offrir les frais de dossier (0 $ au lieu de 10 $)" checked={form.dossier_offered} onChange={(value) => setForm({ ...form, dossier_offered: value })} /></Span>
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   },
@@ -924,7 +916,6 @@ const BF_SERVICES = {
           <Flag label="Rupture si décès avant l'échéance" checked={form.declare_death} onChange={(value) => setForm({ ...form, declare_death: value })} />
           <Flag label="Prise de connaissance des conditions générales" checked={form.declare_terms} onChange={(value) => setForm({ ...form, declare_terms: value })} />
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   },
@@ -995,7 +986,6 @@ const BF_SERVICES = {
           <Flag label="Contrôles de la réserve fédérale" checked={form.control_reserve} onChange={(value) => setForm({ ...form, control_reserve: value })} />
           <Flag label="Transmission aux autorités en cas d'anomalie ou de fraude" checked={form.control_authorities} onChange={(value) => setForm({ ...form, control_authorities: value })} />
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   },
@@ -1027,7 +1017,6 @@ const BF_SERVICES = {
           <Flag label="Connaissance de la règle des 3 % toutes les deux semaines" checked={form.declare_rule} onChange={(value) => setForm({ ...form, declare_rule: value })} />
           <Flag label="Prise de connaissance des conditions générales" checked={form.declare_terms} onChange={(value) => setForm({ ...form, declare_terms: value })} />
         </Part>
-        <Part title="Publication" plain>{discordField(form, setForm)}</Part>
       </>;
     }
   }
@@ -1236,8 +1225,7 @@ function LifeDesk(props) {
         <Flag label="Origine des fonds cohérente" checked={form.funds_coherent} onChange={(value) => setForm({ ...form, funds_coherent: value })} />
         <p style={{ color: '#c9a567', margin: 0 }}>Le bénéficiaire est immuable après la création. Chaque semaine, 5 % sont calculés sur le capital déjà investi, intérêts compris, puis ajoutés à ce capital. Retrait volontaire : 15 %. Statut de validation : Police acceptée.</p>
       </Part>
-      <Part title="Publication" plain>
-        {discordField(form, setForm)}
+      <Part title="Notes" plain>
         <Txt label="Notes internes" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
       </Part>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>

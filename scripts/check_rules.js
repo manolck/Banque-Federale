@@ -123,6 +123,15 @@ const mission = forms.missionEmbed({ agency: 'blackwater', dossier_number: 'EPT-
 assert.strictEqual(mission.color, 0x8b642c);
 assert.ok(!mission.description.includes('@Texas'));
 assert.ok(mission.description.includes('Texas'));
+assert.strictEqual(forms.receiptTitle({ agence: 'blackwater', loan_id: 'BW-0007', nom: 'Santana', prenom: 'Kane' }), 'Texas | BW-0007 | Santana Kane');
+assert.strictEqual(forms.receiptTitle({ agency: 'van_horn', dossier_number: 'C-000001', nom: 'Muddy', prenom: 'Buck' }), 'Louisiane | C-000001 | Muddy Buck');
+assert.strictEqual(forms.receiptTitle({ agencies: ['blackwater', 'rhodes'], company_name: 'Saloon Van Horn', dossier_number: 'GP-000001' }), 'Texas / Louisiane | GP-000001 | Saloon Van Horn');
+assert.deepStrictEqual(forms.receiptTags('pret_loans', { agence: 'sunset' }), ['Nouveau', 'Sunset']);
+assert.deepStrictEqual(forms.receiptTags('pret_consigne_contracts', { agency: 'rhodes', dossier_offered: true }), ['Ouvert', 'OFFERT']);
+assert.deepStrictEqual(forms.receiptTags('pret_speculative_funds', { agency: 'blackwater', tier: 'Palier II', profit_distribution: 'Versement hebdomadaire' }), ['Palier II', 'Blackwater', 'Versement Hebdo']);
+assert.deepStrictEqual(forms.receiptTags('pret_life_insurance_contracts', { agency: 'valentine' }), ['Période de versement']);
+assert.deepStrictEqual(forms.receiptTags('pret_horse_credits', { statut: 'en_cours' }), ['Pari en cours']);
+assert.strictEqual(forms.RECEIPT_FORUMS.pret_goldstein_booklets, undefined);
 
 const actions = require('../server_api/discord_actions');
 const early = actions.serviceNotice('term_savings', 'early_withdrawal', {

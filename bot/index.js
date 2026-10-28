@@ -34,8 +34,8 @@ async function api(method, body) {
   return data;
 }
 
-function tagIds(forum, state) {
-  const wanted = new Set([state, 'à faire']);
+function tagIds(forum, names) {
+  const wanted = new Set((Array.isArray(names) ? names : [names, 'à faire']).map((name) => String(name || '').toLocaleLowerCase('fr')));
   return (forum.availableTags || [])
     .filter((tag) => wanted.has(String(tag.name || '').toLocaleLowerCase('fr')))
     .map((tag) => tag.id);
@@ -63,14 +63,18 @@ function richEmbed(embed) {
 }
 
 async function postSummary(client, item) {
-  const channelId = channelIdFrom(item.discord_url);
-  const channel = await client.channels.fetch(channelId);
+  if (!item.forum_id) throw new Error('Forum du reçu manquant.');
+  const forum = await client.channels.fetch(item.forum_id);
+  if (forum.type !== ChannelType.GuildForum) throw new Error('Le reçu d’ouverture doit viser un forum.');
   const embed = richEmbed(item.embed);
-  const payload = embed
-    ? { embeds: [embed] }
-    : { content: String(item.content || '').slice(0, 1900) };
-  const message = await channel.send(payload);
-  await api('POST', { kind: 'publication', collection: item.collection, id: item.id, message_id: message.id });
+  if (!embed) throw new Error('Reçu sans contenu.');
+  const thread = await forum.threads.create({
+    name: String(item.title || 'Dossier').slice(0, 100),
+    message: { embeds: [embed] },
+    appliedTags: tagIds(forum, item.tags || []).slice(0, 5)
+  });
+  const discord_url = `https://discord.com/channels/${forum.guildId}/${thread.id}`;
+  await api('POST', { kind: 'publication', collection: item.collection, id: item.id, message_id: thread.id, discord_url });
 }
 
 async function postMission(client, item) {

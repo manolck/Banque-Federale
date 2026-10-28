@@ -1,7 +1,7 @@
 const { timingSafeEqual } = require('node:crypto');
 const { sb, json, readBody, handler } = require('./_lib');
 const { addDays, validDate, money, moneyFr, dateFr, discordUrlOk, stateOf, stateLabel, goldsteinNext, lifeFinancials, lifeAsOf } = require('./money');
-const { missionTitle, missionEmbed, letterhead, embedFromText } = require('./discord_forms');
+const { missionTitle, missionEmbed, letterhead, embedFromText, RECEIPT_FORUMS, receiptTitle, receiptTags } = require('./discord_forms');
 const { pendingNotices } = require('./discord_actions');
 const { WEEKLY_RATE } = require('./fonds_interest');
 const { settleFunds, acknowledgeMarket } = require('./fonds_market');
@@ -66,12 +66,16 @@ async function rollWeekly(collection, list, bankDateValue, field) {
 }
 
 function publication(collection, row) {
-  if (!discordUrlOk(row.discord_url) || row.discord_posted_at) return null;
+  if (!row.discord_receipt || row.discord_posted_at) return null;
+  const forumId = RECEIPT_FORUMS[collection];
+  if (!forumId) return null;
   const embed = row.discord_embed && (row.discord_embed.description || row.discord_embed.title)
     ? row.discord_embed
     : embedFromText(row.discord_text);
   if (!embed) return null;
-  return { collection, id: row.id, discord_url: row.discord_url, embed };
+  const title = receiptTitle(row);
+  if (!title) return null;
+  return { collection, id: row.id, forum_id: forumId, title, tags: receiptTags(collection, row), embed };
 }
 
 module.exports = (req, res) => handler(req, res, async () => {
@@ -93,7 +97,6 @@ module.exports = (req, res) => handler(req, res, async () => {
       ['pret_goldstein_booklets', await rows('pret_goldstein_booklets')],
       ['pret_loans', await rows('pret_loans')],
       ['pret_life_insurance_contracts', await rows('pret_life_insurance_contracts')],
-      ['pret_credit_applications', await rows('pret_credit_applications')],
       ['pret_horse_credits', await rows('pret_horse_credits')]
     ];
     const byName = Object.fromEntries(bundles);
@@ -142,14 +145,6 @@ module.exports = (req, res) => handler(req, res, async () => {
           });
         }
       }
-    }
-    for (const row of byName.pret_credit_applications) {
-      if (row.statut === 'transformee' || row.statut === 'refusee') continue;
-      const echeances = row.echeances || (row.details && row.details.echeances) || [];
-      echeances.forEach((echeance, index) => {
-        if (echeance.statut === 'paye' || !dueForMission(echeance.date, today)) return;
-        pushMission(missions, { ...row, prenom: row.client_prenom || row.prenom, nom: row.client_nom || row.nom, agency: row.agency || (row.details && row.details.agency), dossier_number: row.dossier_id }, { collection: 'pret_credit_applications', date: echeance.date, amount: echeance.montant, slot: index });
-      });
     }
     for (const row of [...byName.pret_pawn_loans, ...byName.pret_term_savings]) {
       if (row.paid || row.status === 'paye' || row.status === 'clos') continue;
@@ -209,7 +204,10 @@ module.exports = (req, res) => handler(req, res, async () => {
     if (current.error) return json(res, 500, { error: current.error.message });
     if (!current.data) return json(res, 404, { error: 'Dossier introuvable.' });
     let patch = {};
-    if (body.kind === 'publication') patch = { discord_posted_at: new Date().toISOString(), discord_message_id: body.message_id || null };
+    if (body.kind === 'publication') {
+      patch = { discord_posted_at: new Date().toISOString(), discord_message_id: body.message_id || null };
+      if (discordUrlOk(body.discord_url)) patch.discord_url = String(body.discord_url).trim();
+    }
     else if (body.kind === 'mission') patch = { mission_keys: { ...(current.data.mission_keys || {}), [body.key]: body.message_id || 'posted' } };
     else if (body.kind === 'interest') patch = { last_interest_bank_date: today };
     else if (body.kind === 'notice') {

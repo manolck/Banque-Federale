@@ -39,6 +39,7 @@ function normalize(b, actor){
     acceptations:b.acceptations && typeof b.acceptations === 'object' ? b.acceptations : {},
     discord_text:String(b.discord_text||'').trim(),
     discord_url:String(b.discord_url||'').trim(),
+    agence:String(b.agence||b.agency||'').trim(),
     statut:String(b.statut||'en_cours').trim(),
     created_by_username:actor.username
   };
@@ -68,8 +69,8 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     const b=await readBody(req);
     const payload=normalize(b, actor);
     if(!payload.telegram) return json(res,400,{error:'Télégramme requis'});
-    if(!require('./money').discordUrlOk(payload.discord_url)) return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
     payload.discord_posted_at=null;
+    payload.discord_receipt=true;
     await attachEmbed(payload);
     const { data, error } = await sb.from('pret_horse_credits').insert(payload).select().single();
     if(error) return json(res,500,{error:error.message});
@@ -83,7 +84,7 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     if(!previous) return json(res,404,{error:'Dossier introuvable'});
     const payload=normalize(b, actor);
     delete payload.created_by_username;
-    if(!require('./money').discordUrlOk(payload.discord_url)) return json(res,400,{error:'Le lien Discord du formulaire est obligatoire et doit viser un salon du serveur.'});
+    if(!String(payload.discord_url||'').trim()) delete payload.discord_url;
     await attachEmbed(payload);
     const { horseNotice, enqueueNotice } = require('./discord_actions');
     Object.assign(payload, enqueueNotice({ ...previous, discord_url: payload.discord_url }, horseNotice(previous, payload)));

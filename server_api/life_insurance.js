@@ -74,7 +74,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       beneficiary_first_name:clean(b.beneficiary_first_name,100),beneficiary_last_name:clean(b.beneficiary_last_name,100),beneficiary_telegram:clean(b.beneficiary_telegram,120)||null,
       target_capital:capital,weekly_payment:money(capital/8),interest_rate_weekly:0.05,start_date:start,last_due:addDays(start,49),payments,notes:clean(b.notes,2000)||null,
       enrollment:{...enrollment,validation_status:'Police acceptée',bailiff:clean(enrollment.bailiff,120)},
-      discord_url:clip(b.discord_url,300),discord_posted_at:null,
+      discord_url:clip(b.discord_url,300),discord_posted_at:null,discord_receipt:true,
       created_by_id:actor.id,created_by_username:actor.username
     };
     payload.discord_embed=lifeEmbed(payload,stamp);

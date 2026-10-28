@@ -1,5 +1,5 @@
 const {
-  AGENCIES, CONSIGNE_BANKS, text, requireText, requireUrl, validDate,
+  AGENCIES, CONSIGNE_BANKS, text, requireText, validDate,
   fondsEmbed, pawnEmbed, consigneEmbed, termEmbed, payrollEmbed, goldsteinEmbed,
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
@@ -23,6 +23,7 @@ async function finish(row, render) {
   row.discord_embed = render === 'fonds' ? fondsEmbed(row, stamp) : render(row, stamp);
   row.discord_text = row.discord_embed.description;
   row.discord_posted_at = null;
+  row.discord_receipt = true;
   return { row };
 }
 
@@ -36,7 +37,7 @@ async function speculative(body) {
   const tier = text(body.tier, 20);
   if (!['Palier I', 'Palier II', 'Palier III'].includes(tier)) return fail('Le palier est I, II ou III.');
   if (!agency) return fail('La succursale est obligatoire.');
-  const missing = [requireUrl(body), requireText(body, 'full_name', 'Le nom'), requireText(body, 'civility', 'La civilité'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
+  const missing = [requireText(body, 'full_name', 'Le nom'), requireText(body, 'civility', 'La civilité'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
   if (missing) return fail(missing);
   if (!validDate(body.birth_date) || !validDate(body.signed_on)) return fail('Les dates du dossier sont obligatoires.');
   if (!flags(body, ['declare_risks', 'declare_past', 'declare_accuracy', 'declare_terms'])) return fail('Les quatre déclarations sont obligatoires.');
@@ -58,7 +59,7 @@ async function speculative(body) {
 
 async function pawn(body) {
   const agency = agencyOf(body.agency);
-  const missing = [requireUrl(body), requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'item_type', 'Le type de bien')].find(Boolean);
+  const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'item_type', 'Le type de bien')].find(Boolean);
   if (missing) return fail(missing);
   if (!agency) return fail("L'agence est obligatoire.");
   if (!validDate(body.signed_on)) return fail('La date du contrat est obligatoire.');
@@ -79,7 +80,7 @@ async function pawn(body) {
 
 async function consigne(body) {
   if (!CONSIGNE_BANKS[body.agency]) return fail('La consigne est ouverte à Blackwater, Rhodes, Valentine, Van Horn, Sunset City et Saint Denis.');
-  const missing = [requireUrl(body), requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
+  const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
   if (missing) return fail(missing);
   if (!validDate(body.signed_on)) return fail('La date du contrat est obligatoire.');
   if (!quoteConsigne(body).weekly_total && quoteConsigne(body).weekly_total !== 0) return fail('La couverture est obligatoire.');
@@ -100,7 +101,7 @@ async function consigne(body) {
 
 async function term(body) {
   const agency = agencyOf(body.agency);
-  const missing = [requireUrl(body), requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
+  const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
   if (missing) return fail(missing);
   if (!agency) return fail('La succursale est obligatoire.');
   if (!validDate(body.signed_on)) return fail('La date de souscription est obligatoire.');
@@ -152,7 +153,7 @@ function settleTerm(row, action) {
 
 async function payroll(body) {
   const agencies = (Array.isArray(body.agencies) ? body.agencies : []).filter((item) => AGENCIES.includes(item));
-  const missing = [requireUrl(body), requireText(body, 'company_name', 'La raison sociale'), requireText(body, 'patron', 'Le patron'), requireText(body, 'patron_telegram', 'Le télégramme du patron')].find(Boolean);
+  const missing = [requireText(body, 'company_name', 'La raison sociale'), requireText(body, 'patron', 'Le patron'), requireText(body, 'patron_telegram', 'Le télégramme du patron')].find(Boolean);
   if (missing) return fail(missing);
   if (!agencies.length) return fail('Au moins une succursale est obligatoire.');
   if (!validDate(body.signed_on) || !validDate(body.start_date)) return fail('Les dates du contrat sont obligatoires.');
@@ -184,7 +185,7 @@ async function payroll(body) {
 
 async function goldstein(body) {
   const agency = agencyOf(body.agency);
-  const missing = [requireUrl(body), requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'civility', 'La civilité')].find(Boolean);
+  const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'civility', 'La civilité')].find(Boolean);
   if (missing) return fail(missing);
   if (!agency) return fail('La succursale est obligatoire.');
   if (!validDate(body.signed_on)) return fail("La date d'ouverture est obligatoire.");
