@@ -32,7 +32,7 @@ const ROLE_DEFINITIONS = Object.freeze({
     legacyRole: 'co_directeur',
     permissions: [
       'site.access','bank.read','bank.write','agenda.read','agenda.write','agenda.assign',
-      'users.read','users.write','audit.read','settings.write'
+      'settings.write'
     ]
   },
   BANK_MANAGER: {
@@ -40,8 +40,7 @@ const ROLE_DEFINITIONS = Object.freeze({
     level: 60,
     legacyRole: 'co_directeur',
     permissions: [
-      'site.access','bank.read','bank.write','agenda.read','agenda.write','agenda.assign',
-      'users.read','users.write','audit.read'
+      'site.access','bank.read','bank.write','agenda.read','agenda.write','agenda.assign'
     ]
   },
   BANKER: {

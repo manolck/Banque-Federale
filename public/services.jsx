@@ -600,18 +600,29 @@ function serviceOrder(service) {
   };
 }
 
-function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients }) {
+function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave }) {
   const { useState, useEffect } = BFReact;
   const { Btn, Inp } = bfKit();
   const spec = BF_SERVICES[service];
   const [rows, setRows] = useState([]);
-  const [form, setForm] = useState(spec.blank());
-  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(() => {
+    if (!createFor || !createFor.id) return spec.blank();
+    const next = fillFromClient(spec.blank(), createFor, spec.clientMode || 'person');
+    const scope = activeAgence && activeAgence !== 'toutes' ? activeAgence : '';
+    if (scope) {
+      if (spec.clientMode === 'company') next.agencies = [scope];
+      else next.agency = scope;
+    }
+    if (!next.signed_on) next.signed_on = bfRpToday();
+    return next;
+  });
+  const [open, setOpen] = useState(!!(createFor && createFor.id));
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [movement, setMovement] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => { setAgency(activeAgence || 'toutes'); }, [activeAgence]);
   async function load() {
     const data = await bfKit().api.service(spec.route);
@@ -620,7 +631,37 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       try { setMarket(await bfKit().api.service('fonds_market')); } catch (error) { setMarket(null); }
     } else setMarket(null);
   }
-  useEffect(() => { load().catch((error) => notify('⚠ ' + error.message)); }, [service]);
+  useEffect(() => {
+    let live = true;
+    setLoaded(false);
+    load().catch((error) => { if (live) notify('⚠ ' + error.message); }).finally(() => { if (live) setLoaded(true); });
+    return () => { live = false; };
+  }, [service]);
+  useEffect(() => {
+    if (!focusId) return;
+    const found = rows.find((row) => String(row.id) === String(focusId));
+    if (found) setSelected(found);
+  }, [focusId, rows]);
+  useEffect(() => {
+    if (!createFor || !createFor.id) return;
+    const next = fillFromClient(spec.blank(), createFor, spec.clientMode || 'person');
+    const scope = agency && agency !== 'toutes' ? agency : '';
+    if (scope) {
+      if (spec.clientMode === 'company') next.agencies = [scope];
+      else next.agency = scope;
+    }
+    if (!next.signed_on) next.signed_on = bfRpToday();
+    setForm(next);
+    setOpen(true);
+  }, [createFor && createFor.id, service]);
+  function closeForm() {
+    setOpen(false);
+    if (createFor && onLeave && !selected) onLeave();
+  }
+  function leaveFiche() {
+    setSelected(null);
+    if (onLeave && (focusId || createFor)) onLeave();
+  }
   const preview = spec.preview(form);
   async function save() {
     try {
@@ -672,14 +713,14 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     if (onActiveAgenceChange) onActiveAgenceChange(value);
   }
   const mode = spec.clientMode || 'person';
-  const formPopup = open && <FormPopup title={spec.create.replace(/^\+\s*/, '')} onClose={() => setOpen(false)}>
+  const formPopup = open && <FormPopup title={spec.create.replace(/^\+\s*/, '')} onClose={closeForm}>
       <ClientSelect clients={clients} value={form.client_id} label={mode === 'company' ? 'Patron existant' : 'Client existant'} onChange={(id) => setForm(fillFromClient(form, findClient(clients, id), mode))} />
       {spec.form(form, setForm)}
       <Part title="Calcul" plain>
         {Object.entries(preview).map(([label, value]) => <div className="bvh-field" key={label}><b>{label}</b><span>{value}</span></div>)}
       </Part>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-        <Btn color="#555" disabled={busy} onClick={() => setOpen(false)}>Annuler</Btn>
+        <Btn color="#555" disabled={busy} onClick={closeForm}>Annuler</Btn>
         <Btn disabled={busy} onClick={save}>{busy ? 'Enregistrement…' : 'Enregistrer'}</Btn>
       </div>
     </FormPopup>;
@@ -708,7 +749,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       title={card.name}
       telegram={card.telegram}
       agencyLabel={card.agencyLabel}
-      onBack={() => setSelected(null)}
+      onBack={leaveFiche}
       left={sides.left.map(([label, value]) => ficheLine(label, value))}
       right={sides.right.map(([label, value, color]) => ficheLine(label, value, color))}
       actions={<>
@@ -741,6 +782,10 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       </div>}
       {service === 'speculative_funds' && <FundStatements statements={selected.statements} deposits={selected.deposits} withdrawals={fundWithdrawals(selected)} />}
     </FicheShell>;
+  }
+  if (focusId && !selected) {
+    const found = rows.find((row) => String(row.id) === String(focusId));
+    return <div className="vx-section"><p className="vx-lead">{!loaded || found ? 'Ouverture du dossier…' : 'Dossier introuvable.'}</p>{onLeave && <button type="button" className="vx-btn quiet" onClick={onLeave}>Retour au client</button>}</div>;
   }
   const listed = service === 'speculative_funds' ? rows.slice().sort(fundOrder) : rows.slice().sort(serviceOrder(service));
   return <div>
@@ -1035,15 +1080,60 @@ const BF_SERVICES = {
 
 function LifeDesk(props) {
   const { useState, useEffect } = BFReact;
-  const { contracts, setContracts, notify, activeAgence, onActiveAgenceChange, clients } = props;
+  const { contracts, setContracts, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave } = props;
   const { Btn, Inp, Select, Txt, fCur, fDate, InfoCard } = bfKit();
   const blank = { target_capital: 7500, civility: 'Monsieur', beneficiary_civility: 'Monsieur' };
-  const [form, setForm] = useState(blank);
-  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState(() => {
+    if (!createFor || !createFor.id) return blank;
+    const next = { ...blank, start_date: bfRpToday() };
+    if (activeAgence && activeAgence !== 'toutes') next.agency = activeAgence;
+    next.subscriber_client_id = createFor.id;
+    next.prenom = createFor.prenom || '';
+    next.nom = createFor.nom || '';
+    next.telegram = createFor.telegram || '';
+    next.address = createFor.adresse || '';
+    next.birth_date = createFor.date_naissance || '';
+    next.nationality = createFor.nationalite || '';
+    next.civility = createFor.civilite === 'Madame' ? 'Madame' : 'Monsieur';
+    next.job = createFor.profession || '';
+    next.company = createFor.entreprise || '';
+    return next;
+  });
+  const [open, setOpen] = useState(!!(createFor && createFor.id));
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState(null);
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   useEffect(() => { setAgency(activeAgence || 'toutes'); }, [activeAgence]);
+  useEffect(() => {
+    if (!focusId) return;
+    const found = (contracts || []).find((row) => String(row.id) === String(focusId));
+    if (found) setSelected(found);
+  }, [focusId, contracts]);
+  useEffect(() => {
+    if (!createFor || !createFor.id) return;
+    const next = { ...blank, start_date: bfRpToday() };
+    if (agency && agency !== 'toutes') next.agency = agency;
+    next.subscriber_client_id = createFor.id;
+    next.prenom = createFor.prenom || '';
+    next.nom = createFor.nom || '';
+    next.telegram = createFor.telegram || '';
+    next.address = createFor.adresse || '';
+    next.birth_date = createFor.date_naissance || '';
+    next.nationality = createFor.nationalite || '';
+    next.civility = createFor.civilite === 'Madame' ? 'Madame' : 'Monsieur';
+    next.job = createFor.profession || '';
+    next.company = createFor.entreprise || '';
+    setForm(next);
+    setOpen(true);
+  }, [createFor && createFor.id]);
+  function closeContract() {
+    setOpen(false);
+    if (createFor && onLeave && !selected) onLeave();
+  }
+  function leaveLife() {
+    setSelected(null);
+    if (onLeave && (focusId || createFor)) onLeave();
+  }
   const weekly = bfMoney(Number(form.target_capital) / 8);
   async function save() {
     try {
@@ -1114,7 +1204,7 @@ function LifeDesk(props) {
       title={`${selected.subscriber_first_name || ''} ${selected.subscriber_last_name || ''}`.trim() || '—'}
       telegram={selected.subscriber_telegram}
       agencyLabel={agencyName(selected.agency)}
-      onBack={() => setSelected(null)}
+      onBack={leaveLife}
       left={[
         ficheLine('Bénéficiaire', beneficiary || '—'),
         ficheLine('Statut', LIFE_STATUS[selected.status] || selected.status),
@@ -1146,6 +1236,10 @@ function LifeDesk(props) {
         action: payment.status !== 'paid' && !closed ? <Btn onClick={() => act('record_payment', { installment_number: payment.number })}>Valider paiement</Btn> : null
       }))} />
     </FicheShell>;
+  }
+  if (focusId && !selected && !open) {
+    const found = (contracts || []).find((row) => String(row.id) === String(focusId));
+    return <div className="vx-section"><p className="vx-lead">{found ? 'Ouverture du dossier…' : 'Police introuvable.'}</p>{onLeave && <button type="button" className="vx-btn quiet" onClick={onLeave}>Retour au client</button>}</div>;
   }
   function openContract() {
     const next = { ...blank };
@@ -1192,7 +1286,7 @@ function LifeDesk(props) {
     });
   }
   return <div>
-    {open && <FormPopup title="Nouveau contrat" onClose={() => setOpen(false)}>
+    {open && <FormPopup title="Nouveau contrat" onClose={closeContract}>
       <ClientSelect clients={clients} value={form.subscriber_client_id} label="Souscripteur existant" onChange={pickSubscriber} />
       <Part title="Contrat">
         <AgencySelect label="Agence" value={form.agency} onChange={(event) => setForm({ ...form, agency: event.target.value })} />
@@ -1241,7 +1335,7 @@ function LifeDesk(props) {
         <Txt label="Notes internes" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
       </Part>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-        <Btn color="#555" disabled={busy} onClick={() => setOpen(false)}>Annuler</Btn>
+        <Btn color="#555" disabled={busy} onClick={closeContract}>Annuler</Btn>
         <Btn disabled={busy} onClick={save}>{busy ? 'Enregistrement…' : 'Créer la police'}</Btn>
       </div>
     </FormPopup>}

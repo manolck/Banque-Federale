@@ -27,9 +27,9 @@ body{
 input,select,textarea,button{font-family:inherit}
 input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
 input[type=number]{-moz-appearance:textfield;appearance:textfield}
-::-webkit-scrollbar{width:8px}
-::-webkit-scrollbar-track{background:#0b0704}
-::-webkit-scrollbar-thumb{background:#8b642c;border-radius:8px}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#2a3142;border-radius:99px}
 h1,h2,h3{letter-spacing:.02em;text-shadow:0 2px 0 #000}
 button{transition:.15s ease}
 button:hover{filter:brightness(1.08);transform:translateY(-1px)}
@@ -593,10 +593,8 @@ body{
   overflow-y:auto!important;
   overflow-x:hidden!important;
   padding:16px 18px 18px!important;
-  scrollbar-width:thin;
-  scrollbar-color:rgba(215,166,77,.32) transparent;
 }
-.bvh-sidebar::-webkit-scrollbar{width:7px}
+.bvh-sidebar::-webkit-scrollbar{width:3px;height:3px}
 .bvh-sidebar::-webkit-scrollbar-track{background:transparent}
 .bvh-sidebar::-webkit-scrollbar-thumb{
   background:rgba(215,166,77,.28);
@@ -1138,6 +1136,7 @@ body{
 }
 
 </style>
+<link rel="stylesheet" href="/front.css" />
 </head>
 <body><div id="root"></div>
 <script type="text/babel" src="/services.jsx"></script>
@@ -1148,8 +1147,8 @@ const ROLE_DEFINITIONS={
   TECHNICIAN:{label:'Technicien du Registre',level:100,permissions:['users.read','users.write','audit.read','settings.write','technical.manage']},
   DIRECTOR:{label:'Directeur',level:90,permissions:['users.read','users.write','audit.read','settings.write']},
   DEPUTY_DIRECTOR:{label:'Directeur adjoint',level:80,permissions:['users.read','users.write','audit.read','settings.write']},
-  EXECUTIVE_ASSISTANT:{label:'Secrétaire / Assistante de direction',level:70,permissions:['users.read','users.write','audit.read','settings.write']},
-  BANK_MANAGER:{label:'Responsable bancaire',level:60,permissions:['users.read','users.write','audit.read']},
+  EXECUTIVE_ASSISTANT:{label:'Secrétaire / Assistante de direction',level:70,permissions:['settings.write']},
+  BANK_MANAGER:{label:'Responsable bancaire',level:60,permissions:[]},
   BANKER:{label:'Banquier',level:50,permissions:[]},
   TRAINEE_BANKER:{label:'Banquier en formation',level:40,permissions:[]},
   PARTNER:{label:'Partenaire',level:30,permissions:[]},
@@ -1162,6 +1161,7 @@ const roleInfo=u=>ROLE_DEFINITIONS[roleCode(u)]||ROLE_DEFINITIONS.PENDING_ASSIGN
 const roleLabel=u=>roleInfo(u).label;
 const roleRank=u=>roleInfo(u).level;
 const hasPermission=(u,p)=>roleInfo(u).permissions.includes(p);
+const canOpenDirection=u=>['TECHNICIAN','DIRECTOR','DEPUTY_DIRECTOR'].includes(roleCode(u));
 const ROLE_OPTIONS=Object.entries(ROLE_DEFINITIONS).map(([code,info])=>({code,...info}));
 const fCur=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
 function rpYear(year){const value=Number(year);return value>=2000?1904+(value-2026):value;}
@@ -1251,10 +1251,10 @@ function AgencyBadge({agence}){return <span className="bvh-mini-badge agence">�
 
 function Btn({children,onClick,color=C.blue,disabled,full,style={}}){return <button disabled={disabled} onClick={onClick} style={{background:disabled?'#2a2d3e':color,color:'#fff',border:'none',borderRadius:8,padding:'9px 14px',fontWeight:700,cursor:disabled?'not-allowed':'pointer',display:'inline-flex',alignItems:'center',justifyContent:full?'center':'flex-start',gap:8,width:full?'100%':'auto',...style}}>{children}</button>}
 function Inp({label,error,...p}){const isDate=p.type==='date';const[draft,setDraft]=useState(null);const shown=isDate?(draft!=null&&!p.readOnly?draft:isoToFr(p.value)):p.value;function guardNumber(node){if(!node||p.type!=='number'||node.dataset.wheelGuard)return;node.dataset.wheelGuard='1';node.addEventListener('wheel',event=>{if(document.activeElement===node){event.preventDefault();node.blur();}},{passive:false});}function change(event){if(!isDate)return p.onChange&&p.onChange(event);const raw=maskDate(event.target.value);const iso=frToIso(raw);if(iso||!raw){setDraft(null);p.onChange&&p.onChange({target:{value:iso||''}});}else setDraft(raw);}return <div style={{display:'flex',flexDirection:'column',gap:5}}>{label&&<label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.1em',color:C.muted}}>{label}</label>}<input {...p} type={isDate?'text':p.type} inputMode={isDate?'numeric':p.inputMode} placeholder={isDate?'jj/mm/aaaa':p.placeholder} maxLength={isDate?10:p.maxLength} ref={guardNumber} value={shown} onChange={change} onBlur={e=>{if(isDate)setDraft(null);p.onBlur&&p.onBlur(e);}} style={{background:'#13151f',border:'1px solid '+(error?C.red:C.bord),borderRadius:8,padding:'9px 12px',color:C.txt,outline:'none',width:'100%',...(p.style||{})}}/>{error&&<span style={{color:C.red,fontSize:12}}>{error}</span>}</div>}
-function Select({label,value,onChange,children}){return <div style={{display:'flex',flexDirection:'column',gap:5}}><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.1em',color:C.muted}}>{label}</label><select value={value} onChange={onChange} style={{background:'#13151f',border:'1px solid '+C.bord,borderRadius:8,padding:'9px 12px',color:C.txt,outline:'none',width:'100%'}}>{children}</select></div>}
-function Txt({label,error,...p}){return <div style={{display:'flex',flexDirection:'column',gap:5}}>{label&&<label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.1em',color:C.muted}}>{label}</label>}<textarea {...p} style={{background:'#13151f',border:'1px solid '+(error?C.red:C.bord),borderRadius:8,padding:'9px 12px',color:C.txt,outline:'none',width:'100%',minHeight:80,...(p.style||{})}}/>{error&&<span style={{color:C.red,fontSize:12}}>{error}</span>}</div>}
-function Sec({children}){return <p style={{fontSize:12,fontWeight:800,textTransform:'uppercase',letterSpacing:'.1em',color:C.blue,margin:'18px 0 12px'}}>{children}</p>}
-function Toast({msg}){return msg?<div style={{position:'fixed',top:20,right:20,zIndex:999,background:C.card,border:'1px solid '+C.gold,color:C.gold,borderRadius:10,padding:'12px 18px',boxShadow:'0 8px 24px #0008'}}>{msg}</div>:null}
+function Select({label,value,onChange,children}){return <div className="vx-field">{label&&<label>{label}</label>}<select className="vx-control" value={value} onChange={onChange}>{children}</select></div>}
+function Txt({label,error,...p}){return <div className="vx-field">{label&&<label>{label}</label>}<textarea {...p} className={'vx-control'+(error?' is-error':'')} style={{minHeight:80,...(p.style||{})}}/>{error&&<span style={{color:C.red,fontSize:12}}>{error}</span>}</div>}
+function Sec({children}){return <p className="vx-sec">{children}</p>}
+function Toast({msg}){return msg?<div className="vx-toast">{msg}</div>:null}
 
 function localTimeNow(){
   const d=new Date();
@@ -1316,7 +1316,7 @@ function ReminderModal({open,onClose,loan,echeance,echeanceIndex,onSaved,me}){
   </div>
 }
 
-function Login({onLogin}){const params=new URLSearchParams(location.search);const reason=params.get('discord');const msg=reason==='not_member'?'Vous devez rejoindre le serveur Discord officiel avant de pouvoir accéder au Registre.':reason==='waiting'?"Votre compte Discord est reconnu, mais vous êtes encore en attente d’affectation.":reason==='reauth'?'Votre ancienne session a été fermée. Reconnectez-vous avec Discord pour continuer.':'';return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',background:'radial-gradient(circle at top,#3a250f,#0b0704 60%)',padding:20}}><div className="bvh-login-card"><div style={{textAlign:'center',marginBottom:24}}><img className="bvh-login-stable-logo" src="/logo-registre-reckless.png" alt="Banque Fédérale"/><p style={{color:'#d3b574',fontSize:12,letterSpacing:'.15em',textTransform:'uppercase',fontWeight:800}}>Accès au registre</p></div>{msg&&<div style={{background:'#6b1c1622',border:'1px solid '+C.red,color:'#ffb0a6',borderRadius:8,padding:10,marginBottom:12}}>⚠ {msg}</div>}<Btn full color="#8b642c" onClick={async()=>{try{const r=await api.me();onLogin(r.user)}catch(e){location.href='/api/discord_login'}}}>Entrer dans le registre</Btn><p style={{color:C.muted,fontSize:12,textAlign:'center',marginTop:14}}>La connexion Discord est désactivée pour le moment.</p></div></div>}
+function Login({onLogin}){const params=new URLSearchParams(location.search);const reason=params.get('discord');const msg=reason==='not_member'?'Vous devez rejoindre le serveur Discord officiel avant de pouvoir accéder au Registre.':reason==='waiting'?"Votre compte Discord est reconnu, mais vous êtes encore en attente d’affectation.":reason==='reauth'?'Votre ancienne session a été fermée. Reconnectez-vous avec Discord pour continuer.':'';return <div className="vx-gate"><div className="bvh-login-card"><div style={{textAlign:'center',marginBottom:24}}><img className="bvh-login-stable-logo" src="/logo-registre-reckless.png" alt="Banque Fédérale"/><p style={{color:'#d3b574',fontSize:12,letterSpacing:'.15em',textTransform:'uppercase',fontWeight:800}}>Accès au registre</p></div>{msg&&<div style={{background:'#6b1c1622',border:'1px solid '+C.red,color:'#ffb0a6',borderRadius:8,padding:10,marginBottom:12}}>⚠ {msg}</div>}<Btn full color="#8b642c" onClick={async()=>{try{const r=await api.me();onLogin(r.user)}catch(e){location.href='/api/discord_login'}}}>Entrer dans le registre</Btn><p style={{color:C.muted,fontSize:12,textAlign:'center',marginTop:14}}>La connexion Discord est désactivée pour le moment.</p></div></div>}
 
 function UserPanel({me,users,setUsers,notify}){
   const empty={username:'',role_code:'BANKER',agency:'van_horn',agency_grade:'conseiller_bancaire'};
@@ -1379,30 +1379,144 @@ function NotesPanel({client,focusSignal}){
   return <div className="bvh-ledger" id={`notes-client-${client.id}`}><div className="bvh-ledger-title" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>Notes internes</span><Btn color="#8b642c" disabled={busy} onClick={add}>{busy?'Ajout…':'Ajouter la note'}</Btn></div><div style={{padding:16}}><textarea id={noteId} value={text} onChange={e=>setText(e.target.value)} placeholder="Rédiger une note interne datée automatiquement…" rows={4} className="bvh-note-input" />{err&&<div style={{color:'#ffb0a6',marginTop:8}}>⚠ {err}</div>}<div style={{display:'grid',gap:10,marginTop:14}}>{notes.length===0?<div className="bvh-note-box">Aucune note interne pour ce dossier.</div>:notes.map(n=><div className="bvh-note-card" key={n.id}><div style={{display:'flex',justifyContent:'space-between',gap:10}}><b>{stamp1904(n.created_at)}</b><button onClick={()=>del(n)} style={{background:'none',border:'none',color:'#ffb0a6',cursor:'pointer',fontWeight:900}}>Supprimer</button></div><p style={{whiteSpace:'pre-wrap',marginTop:8}}>{n.note}</p><small>Par {n.created_by_username||'—'}</small></div>)}</div></div></div>
 }
 
-function ClientDossier({client,loans,onBack,onEdit,onDelete,appointments=[],onQuickLoan,onQuickAppointment}){
-  const stt=calcClientStats(client,loans);
-  const[noteFocus,setNoteFocus]=useState(0),[docFocus,setDocFocus]=useState(0);
+function personKey(value){
+  return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function rowMatchesClient(client, row){
+  const id=String(client?.id||'');
+  const ids=[row?.client_id, row?.subscriber_client_id, row?.beneficiary_client_id].map(v=>String(v||''));
+  if(id && ids.includes(id)) return true;
+  const full=personKey(`${client?.prenom||''} ${client?.nom||''}`);
+  const swapped=personKey(`${client?.nom||''} ${client?.prenom||''}`);
+  if(!full) return false;
+  const names=[`${row?.prenom||''} ${row?.nom||''}`, row?.full_name, `${row?.subscriber_first_name||''} ${row?.subscriber_last_name||''}`, `${row?.beneficiary_first_name||''} ${row?.beneficiary_last_name||''}`, `${row?.client_prenom||''} ${row?.client_nom||''}`, row?.patron, row?.copatron].map(personKey).filter(Boolean);
+  return names.includes(full)||names.includes(swapped);
+}
+function offerClosed(service, row){
+  if(['clos','paye','solde','anticipe','closed','cancelled','paid_to_beneficiary','termine'].includes(row.status||row.statut)) return true;
+  if(service==='goldstein_booklets' && Number(row.balance)===0) return true;
+  return false;
+}
+function offerLate(date, closed){return !closed && !!date && daysDiff(date)<0;}
+function loanOffer(loan){
+  const unpaid=(loan.echeances||[]).filter(e=>e.statut!=='paye').sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));
+  const closed=!unpaid.length || isLoanRecouvrementCloture(loan);
+  const late=!closed && unpaid.some(e=>daysDiff(e.date)<0);
+  const paid=(loan.echeances||[]).filter(e=>e.statut==='paye').reduce((s,e)=>s+Number(e.montant||0),0);
+  const remaining=Math.max(Number(loan.total_a_rembourser||0)-paid,0);
+  return {id:loan.id, ref:loan.loan_id||'Prêt', title:agenceLabel(loanAgence(loan))+(isLoanInRecouvrement(loan)?' · Recouvrement':''), status:late?'En retard':closed?'Clôturé':'En cours', tone:late?'is-late':closed?'':'is-soon', left:fCur(loan.somme), leftLabel:'Prêté', right:closed?fCur(loan.total_a_rembourser):fCur(remaining), rightLabel:closed?'Total':'Restant', extra:unpaid[0]?fDate(unpaid[0].date):'Soldé'};
+}
+function lifeOffer(client, row){
+  const closed=['closed','cancelled','paid_to_beneficiary'].includes(row.status);
+  const next=(row.payments||[]).find(p=>p.status!=='paid');
+  const late=offerLate(next&&next.date, closed);
+  const id=String(client.id||'');
+  const full=personKey(clientFullName(client));
+  const subscriber=(id&&String(row.subscriber_client_id||'')===id)||(full&&personKey(`${row.subscriber_first_name||''} ${row.subscriber_last_name||''}`)===full);
+  return {id:row.id, ref:row.contract_number||'Assurance-vie', title:subscriber?'Souscripteur':'Bénéficiaire', status:closed?'Clôturé':late?'En retard':'En cours', tone:late?'is-late':closed?'':'is-soon', left:fCur(row.target_capital), leftLabel:'Capital', right:fCur((row.financials||{}).balance), rightLabel:'Solde', extra:next?fDate(next.date):'Versements terminés'};
+}
+function serviceOffer(service, row){
+  const closed=offerClosed(service, row);
+  let title='Contrat', left=fCur(row.amount), leftLabel='Montant', right=fCur(row.amount_due), rightLabel='Dû', extra='', due='';
+  if(service==='speculative_funds'){title=row.tier||'Fonds';left=fCur(row.amount);leftLabel='Souscrit';right=row.capital_balance==null?(row.status||'—'):fCur(row.capital_balance);rightLabel=row.capital_balance==null?'État':'Capital';extra=row.status==='pause'?'En pause':'';}
+  else if(service==='pawn_loans'){title=row.item_type||'Bien gagé';left=fCur(row.amount);leftLabel='Prêté';right=fCur(row.amount_due||row.repayment);rightLabel='À rembourser';due=row.echeance_date;extra=due?fDate(due):'';}
+  else if(service==='consigne_contracts'){title=row.coverage||'Consigne';left=fCur(row.weekly_total);leftLabel='Par semaine';right=fCur(row.stored_value);rightLabel='Déposé';due=row.next_due;extra=due?fDate(due):'';}
+  else if(service==='term_savings'){title=row.weeks?`${row.weeks} semaines`:'Épargne';left=fCur(row.amount);leftLabel='Placé';right=fCur(row.settlement?row.settlement.net:(row.maturity_amount||row.amount_due));rightLabel=row.settlement?'Restitué':"À l'échéance";due=row.echeance_date;extra=due?fDate(due):'';}
+  else if(service==='payroll_contracts'){title=row.company_name||'Paie';left=fCur(row.payroll);leftLabel='Masse salariale';right=fCur(row.installment_cost||row.amount_due);rightLabel='Échéance';due=row.next_due;extra=due?fDate(due):'';}
+  else if(service==='goldstein_booklets'){title='Livret';left=fCur(row.balance);leftLabel='Solde';right=fCur(row.period_interest);rightLabel='Intérêt 3 %';due=row.next_capitalization;extra=due?fDate(due):'';}
+  const late=offerLate(due, closed);
+  const status=row.status==='pause'?'En pause':late?'En retard':closed?'Clôturé':'Ouvert';
+  return {id:row.id, ref:row.dossier_number||row.id, title, status, tone:late?'is-late':closed?'':'is-soon', left, leftLabel, right, rightLabel, extra};
+}
+function horseOffer(row){
+  const done=row.statut==='termine', refused=row.statut==='refuse';
+  return {id:row.id, ref:row.dossier_id||'Hippique', title:row.cheval_ecurie||row.date_course||'Course', status:refused?'Refusé':done?'Terminé':'En cours', tone:refused?'is-late':done?'':'is-soon', left:fCur(row.montant_total), leftLabel:'Mise', right:`${row.taux||0} %`, rightLabel:'Taux', extra:row.date_course||''};
+}
+function clientPortfolio(client, sources){
+  const books=sources.books||{};
+  const take=(key)=> (books[key]||[]).filter(row=>rowMatchesClient(client,row)).map(row=>serviceOffer(key,row));
+  const groups=[
+    {key:'prets', title:'Prêts', kind:'loan', items:clientLoans(client, sources.loans).map(loanOffer)},
+    {key:'assurances', title:'Assurances-vie', kind:'life', items:(sources.life||[]).filter(row=>rowMatchesClient(client,row)).map(row=>lifeOffer(client,row))},
+    {key:'fonds', title:'Fonds spéculatifs', kind:'service', service:'speculative_funds', items:take('speculative_funds')},
+    {key:'gage', title:'Prêt sur gage', kind:'service', service:'pawn_loans', items:take('pawn_loans')},
+    {key:'consigne', title:'Consignes', kind:'service', service:'consigne_contracts', items:take('consigne_contracts')},
+    {key:'terme', title:'Épargne à terme', kind:'service', service:'term_savings', items:take('term_savings')},
+    {key:'paie', title:'Gestion de paie', kind:'service', service:'payroll_contracts', items:take('payroll_contracts')},
+    {key:'goldstein', title:'Livret Goldstein', kind:'service', service:'goldstein_booklets', items:take('goldstein_booklets')},
+    {key:'hippique', title:'Crédit hippique', kind:'horse', items:(sources.horses||[]).filter(row=>rowMatchesClient(client,row)).map(horseOffer)}
+  ];
+  const count=groups.reduce((sum,group)=>sum+group.items.length,0);
+  const late=groups.some(group=>group.items.some(item=>item.tone==='is-late'));
+  const labels=groups.filter(group=>group.items.length).map(group=>group.title);
+  return {groups, count, late, labels};
+}
+function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,books,horses,appointments,clients,notify,me,activeAgence,onBack,onEdit,onDelete,onQuickAppointment,onRefresh}){
+  const pack=clientPortfolio(client,{loans,life:lifeInsurance,books,horses});
+  const[desk,setDesk]=useState(null),[noteFocus,setNoteFocus]=useState(0),[docFocus,setDocFocus]=useState(0);
   function focusNote(){setNoteFocus(Date.now());setTimeout(()=>document.getElementById(`notes-client-${client.id}`)?.scrollIntoView({behavior:'smooth',block:'center'}),0)}
   function focusDoc(){setDocFocus(Date.now());setTimeout(()=>document.getElementById(`archives-client-${client.id}`)?.scrollIntoView({behavior:'smooth',block:'center'}),0)}
-  return <div><button onClick={onBack} style={{background:'none',border:'none',color:'#f3d58a',cursor:'pointer',marginBottom:14,fontWeight:900}}>← Retour au registre des clients</button><div className="bvh-dossier-head"><div><div className="bvh-dossier-code">Dossier {clientCode(client)}</div><h1>{clientFullName(client)}</h1><p style={{color:'#b69b68'}}>Fiche client officielle — Banque Fédérale</p></div><div style={{display:'flex',gap:8,alignItems:'center'}}><Btn color="#5f4725" onClick={()=>onEdit(client)}>Modifier</Btn><Btn color={C.red} onClick={()=>onDelete(client)}>Supprimer</Btn></div></div>
-    <div className="bvh-client-actions"><div className="bvh-client-actions-title">Actions rapides</div><small>Les formulaires ouverts depuis cette fiche sont automatiquement liés à {clientFullName(client)}.</small><Btn color="#4a7fbd" onClick={()=>onQuickLoan?.(client)}>📜 Ajouter un prêt</Btn><Btn color="#3f9b67" onClick={()=>onQuickAppointment?.(client)}>🗓️ Planifier un rendez-vous</Btn><Btn color="#5f4725" onClick={focusNote}>📝 Ajouter une note</Btn><Btn color="#5f4725" onClick={focusDoc}>📎 Ajouter un document</Btn></div>
-    <div className="bvh-grid-4"><InfoCard icon="📜" title="Prêts enregistrés" value={stt.loans.length} note="Historique bancaire"/><InfoCard icon="⏳" title="Prêts en cours" value={stt.active} note="Non soldés"/><InfoCard icon="💰" title="Total emprunté" value={fCur(stt.total)} note="Capital nominal"/><InfoCard icon="✅" title="Total remboursé" value={fCur(stt.paid)} note="Paiements validés"/></div>
-    <div className="bvh-dossier-grid-wide"><div className="bvh-ledger"><div className="bvh-ledger-title">Informations générales</div><div style={{padding:'8px 16px 16px'}}><div className="bvh-field"><b>Nom complet</b><span>{clientFullName(client)}</span></div><div className="bvh-field"><b>Télégramme</b><span>{client.telegram||'—'}</span></div><div className="bvh-field"><b>Adresse / État</b><span>{client.adresse||'—'}</span></div><div className="bvh-field"><b>Statut</b><span>{stt.late>0?'🔴 Paiement en retard':'🟢 Dossier à jour'}</span></div></div></div><DocumentPanel client={client} focusSignal={docFocus}/></div>
-    <div className="bvh-dossier-grid-wide"><NotesPanel client={client} focusSignal={noteFocus}/><div className="bvh-ledger"><div className="bvh-ledger-title">Résumé du dossier</div><div style={{padding:'8px 16px 16px'}}><div className="bvh-field"><b>Paiements en retard</b><span>{stt.late}</span></div><div className="bvh-field"><b>Prêts en cours</b><span>{stt.active}</span></div><div className="bvh-field"><b>Total récupéré</b><span>{fCur(stt.paid)}</span></div></div></div></div>
-    <div className="bvh-dossier-grid-wide"><ClientAgendaPanel client={client} appointments={appointments}/></div>
-    <div className="bvh-ledger"><div className="bvh-ledger-title">Prêts du client</div>{stt.loans.length===0?<p className="bvh-empty">Aucun prêt enregistré pour ce client.</p>:stt.loans.map(l=><div className="bvh-row" key={l.id}><b>{l.loan_id}</b><span>{fCur(l.somme)}</span><span>{fCur(l.total_a_rembourser)}</span><Badge s={(l.echeances||[]).some(e=>e.statut!=='paye'&&daysDiff(e.date)<0)?'retard':'avenir'}/><span style={{color:'#d8bf82'}}>{agenceLabel(loanAgence(l))}{isLoanInRecouvrement(l)?' · Recouvrement':''}</span></div>)}</div></div>
+  function leaveDesk(){setDesk(null);onRefresh?.();}
+  async function saveLoan(l){const u=l.id?await api.updateLoan(l):await api.addLoan(l);setLoans(l.id?loans.map(x=>x.id===u.id?u:x):[u,...loans]);notify(l.id?'Prêt modifié':'Prêt créé');return u;}
+  async function deleteLoan(l){if(!confirm('Supprimer définitivement ce prêt ?'))return;await api.deleteLoan(l.id);setLoans(loans.filter(x=>x.id!==l.id));notify('Prêt supprimé');setDesk(null);}
+  if(desk?.kind==='loan'&&desk.edit) return <LoanModal open loan={desk.edit} clients={clients} onClose={()=>setDesk({kind:'loan',id:desk.edit.id})} onSave={async l=>{const u=await saveLoan(l);setDesk({kind:'loan',id:u.id});}} defaultAgence={loanAgence(desk.edit)}/>;
+  if(desk?.kind==='loan'&&desk.id){const loan=(loans||[]).find(item=>String(item.id)===String(desk.id));if(!loan)return <div className="vx-section"><p className="vx-lead">Prêt introuvable.</p><button type="button" className="vx-btn quiet" onClick={()=>setDesk(null)}>Retour au client</button></div>;return <LoanDetail loan={loan} onBack={()=>setDesk(null)} onUpdate={u=>{if(u._edit){setDesk({kind:'loan',edit:loan});return;}setLoans(loans.map(x=>x.id===u.id?u:x));}} onDelete={deleteLoan} notify={notify} me={me}/>;}
+  if(desk?.kind==='loan'&&desk.create) return <LoanModal open prefill={client} clients={clients} onClose={()=>setDesk(null)} onSave={async l=>{await saveLoan(l);setDesk(null);}} defaultAgence={activeAgence&&activeAgence!=='toutes'?activeAgence:'van_horn'}/>;
+  if(desk?.kind==='service'&&window.BF) return <window.BF.ServiceDesk service={desk.service} clients={clients} notify={notify} activeAgence={activeAgence} focusId={desk.id||null} createFor={desk.create?client:null} onLeave={leaveDesk}/>;
+  if(desk?.kind==='life'&&window.BF) return <window.BF.LifeDesk contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} focusId={desk.id||null} createFor={desk.create?client:null} onLeave={leaveDesk}/>;
+  if(desk?.kind==='horse') return <HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} focusId={desk.id||null} createFor={desk.create?client:null} onLeave={leaveDesk}/>;
+  return <div className="vx-home">
+    <header className="vx-hero" style={{paddingTop:18}}>
+      <button type="button" className="vx-btn quiet" onClick={onBack}>← Clients</button>
+      <span className="vx-pill"><i></i> {clientCode(client)} · {pack.late?'Retard':'À jour'}</span>
+      <h1>{clientFullName(client)}</h1>
+      <p>{client.telegram||'Télégramme non indiqué'} · {client.adresse||'Adresse non indiquée'}</p>
+      <div className="vx-hero-actions">
+        <Btn onClick={()=>onEdit(client)}>Modifier</Btn>
+        <Btn color="#5f4725" onClick={()=>onQuickAppointment?.(client)}>Rendez-vous</Btn>
+        <Btn color="#5f4725" onClick={focusNote}>Note</Btn>
+        <Btn color="#5f4725" onClick={focusDoc}>Document</Btn>
+        <Btn color={C.red} onClick={()=>onDelete(client)}>Supprimer</Btn>
+      </div>
+      <div className="vx-stats">
+        <div><b>{pack.count}</b>Contrats</div>
+        <div><b>{pack.groups[0].items.length}</b>Prêts</div>
+        <div><b>{pack.labels.length}</b>Services</div>
+        <div><b>{pack.late?'Oui':'Non'}</b>Retard</div>
+      </div>
+    </header>
+    {pack.groups.map(group=><section className="vx-section" key={group.key}>
+      <div className="vx-head"><div><h2>{group.title}</h2><p className="vx-lead" style={{textAlign:'left',margin:0}}>{group.items.length?`${group.items.length} contrat${group.items.length>1?'s':''}`:'Aucun contrat'}</p></div><button type="button" className="vx-btn primary" onClick={()=>setDesk({kind:group.kind,service:group.service,create:true})}>Souscrire</button></div>
+      {group.items.map(item=><button type="button" className={'vx-row '+(item.tone||'')} key={item.id} onClick={()=>setDesk({kind:group.kind,service:group.service,id:item.id})}><div><b>{item.ref}</b><small>{item.title}</small></div><span>{item.left}<br/>{item.leftLabel}</span><span>{item.right}<br/>{item.rightLabel}</span><div><b>{item.status}</b><small>{item.extra}</small></div></button>)}
+    </section>)}
+    <section className="vx-section"><div className="vx-grid-2"><div className="vx-card"><h3>Identité</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div></section>
+    <DocumentPanel client={client} focusSignal={docFocus}/>
+    <NotesPanel client={client} focusSignal={noteFocus}/>
+  </div>;
 }
 function ClientModal({open,onClose,onSave,client}){const empty={nom:'',prenom:'',telegram:'',adresse:''};const[f,setF]=useState(empty);useEffect(()=>{if(open)setF(client?{...empty,...client}:empty)},[open,client]);if(!open)return null;async function save(){if(!f.nom||!f.prenom)return alert('Nom et prénom requis');await onSave(f);onClose();}return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:210,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'linear-gradient(180deg,#1e140b,#100a06)',border:'1px solid #805a28',borderTop:'4px solid #c9943c',borderRadius:14,padding:24,width:620,maxWidth:'96vw'}}><h2 style={{color:'#f6d27b',marginBottom:12}}>{client?'Modifier le dossier client':'Ouvrir un dossier client'}</h2><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Prénom" value={f.prenom||''} onChange={e=>setF({...f,prenom:e.target.value})}/><Inp label="Nom" value={f.nom||''} onChange={e=>setF({...f,nom:e.target.value})}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Télégramme" value={f.telegram||''} onChange={e=>setF({...f,telegram:e.target.value})}/><Inp label="Adresse / État" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}><Btn color="#555" onClick={onClose}>Annuler</Btn><Btn color="#8b642c" onClick={save}>Enregistrer</Btn></div></div></div>}
-function ClientsPage({clients,setClients,loans=[],appointments=[],notify,openClientId,onOpenClientHandled,onQuickLoan,onQuickAppointment}){
-  const[query,setQuery]=useState(''),[selected,setSelected]=useState(null),[modal,setModal]=useState(false),[editing,setEditing]=useState(null);
-  useEffect(()=>{if(!openClientId)return;const target=clients.find(c=>String(c.id)===String(openClientId));if(target){setSelected(target);onOpenClientHandled?.();}},[openClientId,clients]);
-  async function saveClient(f){try{const payload=editing?{...f,id:editing.id}:f;const c=editing?await api.updateClient(payload):await api.addClient(payload);setClients(editing?clients.map(x=>x.id===c.id?c:x):[c,...clients]);setSelected(c);setEditing(null);notify(editing?'Client modifié':'Client ajouté')}catch(e){notify('⚠ '+e.message)}}
+function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsurance,setLifeInsurance,books,horses,notify,openClientId,onOpenClientHandled,onQuickAppointment,me,activeAgence,onRefresh}){
+  const[query,setQuery]=useState(''),[selectedId,setSelectedId]=useState(null),[modal,setModal]=useState(false),[editing,setEditing]=useState(null);
+  useEffect(()=>{if(!openClientId)return;const target=clients.find(c=>String(c.id)===String(openClientId));if(target){setSelectedId(target.id);onOpenClientHandled?.();}},[openClientId,clients]);
+  const selected=clients.find(c=>String(c.id)===String(selectedId))||null;
+  async function saveClient(f){try{const payload=editing?{...f,id:editing.id}:f;const c=editing?await api.updateClient(payload):await api.addClient(payload);setClients(editing?clients.map(x=>x.id===c.id?c:x):[c,...clients]);setSelectedId(c.id);setEditing(null);notify(editing?'Client modifié':'Client ajouté')}catch(e){notify('⚠ '+e.message)}}
   function add(){setEditing(null);setModal(true)}
   function edit(c){setEditing(c);setModal(true)}
-  async function del(c){if(!confirm('Supprimer '+clientFullName(c)+' ?'))return;try{await api.deleteClient(c.id);setClients(clients.filter(x=>x.id!==c.id));setSelected(null);notify('Client supprimé')}catch(e){notify('⚠ '+e.message)}}
-  const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')).toLowerCase().includes(query.toLowerCase()));
-  if(selected)return <><ClientDossier client={selected} loans={loans} appointments={appointments} onBack={()=>setSelected(null)} onEdit={edit} onDelete={del} onQuickLoan={onQuickLoan} onQuickAppointment={onQuickAppointment}/><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></>;
-  return <div><div className="bvh-topbar"><div><small>Registre clientèle</small><h1>Clients</h1></div><Btn onClick={add}>+ Ouvrir un dossier</Btn></div><Inp placeholder="Recherche par nom, télégramme ou état…" value={query} onChange={e=>setQuery(e.target.value)} style={{marginBottom:16}}/><div className="bvh-client-list">{list.map(c=>{const stt=calcClientStats(c,loans);return <div key={c.id} className="bvh-client-row" onClick={()=>setSelected(c)}><div className="bvh-dossier-code">{clientCode(c)}</div><b>{clientFullName(c)}</b><span>{c.telegram||'—'}</span><span>{c.adresse||'—'}</span><span>{stt.late>0?'🔴 En retard':'🟢 À jour'}</span></div>})}</div><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></div>
+  async function del(c){if(!confirm('Supprimer '+clientFullName(c)+' ?'))return;try{await api.deleteClient(c.id);setClients(clients.filter(x=>x.id!==c.id));setSelectedId(null);notify('Client supprimé')}catch(e){notify('⚠ '+e.message)}}
+  const needle=query.trim().toLowerCase();
+  const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')).toLowerCase().includes(needle)).slice().sort((a,b)=>clientFullName(a).localeCompare(clientFullName(b),'fr'));
+  if(selected)return <><ClientDossier client={selected} loans={loans} setLoans={setLoans} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} appointments={appointments} clients={clients} notify={notify} me={me} activeAgence={activeAgence} onBack={()=>setSelectedId(null)} onEdit={edit} onDelete={del} onQuickAppointment={onQuickAppointment} onRefresh={onRefresh}/><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></>;
+  return <div className="vx-home">
+    <header className="vx-hero">
+      <span className="vx-pill"><i></i> Registre clientèle</span>
+      <h1>Clients</h1>
+      <p>{clients.length} personnes. Ouvre une fiche pour voir tous les contrats souscrits.</p>
+      <div className="vx-hero-actions"><button type="button" className="vx-btn primary" onClick={add}>Ouvrir un dossier</button></div>
+    </header>
+    <Inp placeholder="Nom, télégramme ou adresse…" value={query} onChange={e=>setQuery(e.target.value)} style={{margin:'8px auto 22px',maxWidth:520}}/>
+    {list.length===0?<p className="vx-lead">Aucun client pour cette recherche.</p>:<div className="vx-grid">{list.map(c=>{const pack=clientPortfolio(c,{loans,life:lifeInsurance,books,horses});return <button type="button" className="vx-card" key={c.id} onClick={()=>setSelectedId(c.id)}><header><span>{clientCode(c)}</span><span>{pack.late?'En retard':'À jour'}</span></header><h3>{clientFullName(c)}</h3><p>{c.telegram||'Télégramme non indiqué'}</p><span>{pack.count?pack.labels.join(' · '):'Aucun contrat'}</span></button>;})}</div>}
+    <ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/>
+  </div>;
 }
 
 function LoanModal({open,onClose,onSave,loan,clients,prefill,defaultAgence='van_horn'}){
@@ -1588,8 +1702,10 @@ const AGENDA_STATUSES={
   termine:["Terminé","#4d8fbd"],
   annule:["Annulé","#b94735"]
 };
-function agendaDateTime(date,time){return new Date(`${date}T${time||'00:00'}:00`);}
-function agendaEndDate(date,start,end){return end<=start?plusDaysFrom(date,1):date;}
+function agendaToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function agendaRealIso(value){const iso=String(value||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!iso)return '';const year=Number(iso[1]);return `${year>=2000?year:year+(2026-1904)}-${iso[2]}-${iso[3]}`;}
+function agendaDateTime(date,time){const real=agendaRealIso(date)||String(date||'').slice(0,10);return new Date(`${real}T${time||'00:00'}:00`);}
+function agendaEndDate(date,start,end){const real=agendaRealIso(date)||date;return end<=start?plusDaysFrom(real,1):real;}
 function plusDaysFrom(iso,days){const d=new Date(`${iso}T12:00:00`);d.setDate(d.getDate()+days);return d.toISOString().split('T')[0];}
 function agendaEventsForClient(client,events){
   return (events||[]).filter(e=>String(e.client_id||'')===String(client.id||''));
@@ -1598,7 +1714,7 @@ function AgendaStatus({status}){const s=AGENDA_STATUSES[status]||AGENDA_STATUSES
 
 function ClientAgendaPanel({client,appointments=[]}){
   const events=agendaEventsForClient(client,appointments).sort((a,b)=>agendaDateTime(a.appointment_date,a.start_time)-agendaDateTime(b.appointment_date,b.start_time));
-  const now=new Date(`${today()}T${localTimeNow()}:00`);
+  const now=new Date(`${agendaToday()}T${localTimeNow()}:00`);
   const upcoming=events.filter(e=>agendaDateTime(e.end_date||e.appointment_date,e.end_time)>=now);
   return <div className="bvh-ledger">
     <div className="bvh-ledger-title">Rendez-vous du client</div>
@@ -1693,7 +1809,7 @@ function appointmentDraft(day,time){
   return {appointment_date:day,start_time:time,end_time:nextSlot(time),appointment_type:'etude_pret',status:'prevu'};
 }
 function AgendaModal({open,onClose,onSave,onDelete,event,initial,clients,me,appointments=[]}){
-  const blank={client_id:'',appointment_date:today(),start_time:'09:00',end_time:'09:30',appointment_type:'etude_pret',title:'',location:'',notes:'',status:'prevu',responsable_username:me?.username||''};
+  const blank={client_id:'',appointment_date:agendaToday(),start_time:'09:00',end_time:'09:30',appointment_type:'etude_pret',title:'',location:'',notes:'',status:'prevu',responsable_username:me?.username||''};
   const[f,setF]=useState(blank);
   const[search,setSearch]=useState('');
   const[busy,setBusy]=useState(false);
@@ -1740,7 +1856,7 @@ function AgendaModal({open,onClose,onSave,onDelete,event,initial,clients,me,appo
         </Select>
         {selected&&<div style={{background:'#25170c',border:'1px solid #6d4b22',borderRadius:9,padding:10,color:'#d8bf82'}}>Dossier sélectionné : <b style={{color:'#f3d58a'}}>{clientFullName(selected)}</b> · {selected.telegram||'sans télégramme'} · {selected.adresse||'adresse non indiquée'}</div>}
         <div className="bvh-agenda-modal-grid" style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:12}}>
-          <Inp label="Date" type="date" value={f.appointment_date} onChange={e=>setF({...f,appointment_date:e.target.value})}/>
+          <Inp label="Date" type="date" value={f.appointment_date} onChange={e=>setF({...f,appointment_date:e.target.value?agendaRealIso(e.target.value):''})}/>
           <Select label="Début" value={f.start_time} onChange={e=>setF({...f,start_time:e.target.value})}>{AGENDA_TIMES.map(t=><option key={t} value={t}>{t}</option>)}</Select>
           <Select label="Fin" value={f.end_time} onChange={e=>setF({...f,end_time:e.target.value})}>{AGENDA_TIMES.map(t=><option key={t} value={t}>{t}</option>)}</Select>
         </div>
@@ -1765,7 +1881,7 @@ function AgendaModal({open,onClose,onSave,onDelete,event,initial,clients,me,appo
   </div>
 }
 function AgendaPage({appointments,setAppointments,clients,me,notify,openForClient,onQuickAppointmentHandled}){
-  const[anchor,setAnchor]=useState(today());
+  const[anchor,setAnchor]=useState(agendaToday());
   const[view,setView]=useState(()=>window.innerWidth<=760?'day':'week');
   const[modal,setModal]=useState(false);
   const[editing,setEditing]=useState(null);
@@ -1780,7 +1896,7 @@ function AgendaPage({appointments,setAppointments,clients,me,notify,openForClien
   useEffect(()=>{
     if(openForClient){
       setEditing(null);
-      setDraft({client_id:openForClient.id||'',appointment_date:today(),start_time:'09:00',end_time:'09:30',appointment_type:'etude_pret',status:'prevu'});
+      setDraft({client_id:openForClient.id||'',appointment_date:agendaToday(),start_time:'09:00',end_time:'09:30',appointment_type:'etude_pret',status:'prevu'});
       setModal(true);
       onQuickAppointmentHandled?.();
     }
@@ -1853,9 +1969,9 @@ function AgendaPage({appointments,setAppointments,clients,me,notify,openForClien
     <div className="bvh-calendar-panel">
       <div className="bvh-calendar-toolbar">
         <Btn color="#5f4725" onClick={()=>changePeriod(-1)}>←</Btn>
-        <Btn color="#5f4725" onClick={()=>setAnchor(today())}>Aujourd’hui</Btn>
+        <Btn color="#5f4725" onClick={()=>setAnchor(agendaToday())}>Aujourd’hui</Btn>
         <Btn color="#5f4725" onClick={()=>changePeriod(1)}>→</Btn>
-        <Inp type="date" value={anchor} onChange={e=>setAnchor(e.target.value)} style={{width:165}}/>
+        <Inp type="date" value={anchor} onChange={e=>{const real=agendaRealIso(e.target.value);if(real)setAnchor(real);}} style={{width:165}}/>
         <span className="bvh-calendar-title">{weekLabel}</span>
         <div className="bvh-view-toggle">
           <button className={view==='week'?'active':''} onClick={()=>setView('week')}>Semaine</button>
@@ -1874,7 +1990,7 @@ function AgendaPage({appointments,setAppointments,clients,me,notify,openForClien
       <div className="bvh-calendar-scroll">
         <div className="bvh-week-grid" style={{'--days':days.length}}>
           <div className="bvh-calendar-corner"></div>
-          {days.map(day=><div key={day} className={'bvh-calendar-day-head '+(sameDay(day,today())?'today':'')} onClick={()=>{setAnchor(day);setView('day')}} title="Ouvrir cette journée">
+          {days.map(day=><div key={day} className={'bvh-calendar-day-head '+(sameDay(day,agendaToday())?'today':'')} onClick={()=>{setAnchor(day);setView('day')}} title="Ouvrir cette journée">
             <div className="dow">{dayShort(day)}</div><div className="date">{new Date(`${day}T12:00:00`).getDate()}</div>
           </div>)}
           <div>
@@ -1883,7 +1999,7 @@ function AgendaPage({appointments,setAppointments,clients,me,notify,openForClien
           {days.map(day=>{
             const segments=layoutSegments(filteredEvents,day);
             const now=new Date(nowTick);
-            const isToday=sameDay(day,today());
+            const isToday=sameDay(day,agendaToday());
             const nowTop=(now.getHours()*2+(now.getMinutes()/30))*AGENDA_SLOT_HEIGHT;
             return <div key={day} className="bvh-calendar-day-column">
               {AGENDA_TIMES.map(time=><div key={time} className="bvh-calendar-slot"
@@ -1975,7 +2091,7 @@ function horseDiscord(f){
   ].join('\n');
 }
 
-function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceChange}){
+function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceChange,focusId,createFor,onLeave}){
   const empty={
     id:null,dossier_id:'',client_id:'',client_nom:'',client_prenom:'',telegram:'',adresse:'',profession:'',
     date_du_jour:isoToFr(today()),
@@ -1994,6 +2110,9 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
   useEffect(()=>{setAgency(activeAgence||'toutes')},[activeAgence]);
 
   useEffect(()=>{api.horseCredits().then(setCredits).catch(e=>notify('⚠ '+e.message))},[]);
+  useEffect(()=>{if(!focusId)return;const target=(credits||[]).find(c=>String(c.id)===String(focusId));if(target)setView(target);},[focusId,credits]);
+  useEffect(()=>{if(!createFor||!createFor.id)return;setF({...empty,client_id:createFor.id,client_nom:createFor.nom||'',client_prenom:createFor.prenom||'',telegram:createFor.telegram||'',adresse:createFor.adresse||'',date_du_jour:isoToFr(today())});setView(null);setFormOpen(true);},[createFor&&createFor.id]);
+  function cancelHorseForm(){setFormOpen(false);if(createFor&&onLeave&&!f.id)onLeave();}
 
   function fromCredit(c){
     const acc=c.acceptations||{};
@@ -2077,7 +2196,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
       title={`${view.client_prenom||''} ${view.client_nom||''}`.trim()||'—'}
       telegram={view.telegram}
       agencyLabel={agencyText}
-      onBack={()=>setView(null)}
+      onBack={()=>{setView(null);if(onLeave&&(focusId||createFor))onLeave();}}
       left={[line('Adresse', view.adresse||'—'), line('Profession', view.profession||'—'), line('Course', view.date_course||'—'), line('Cheval / écurie', view.cheval_ecurie||'—')]}
       right={[line('Mise', fCur(view.montant_total), '#f3d58a'), line('Taux', `${view.taux||0} %`), line('Pari', `${view.type_pari||'—'}${view.type_pari_autre?` · ${view.type_pari_autre}`:''}`), line('Statut', view.statut==='termine'?'Terminé':view.statut==='refuse'?'Refusé':'En cours', view.statut==='termine'?'#74d59d':view.statut==='refuse'?'#d76453':'#f3d58a')]}
       actions={<><Btn color="#8b642c" onClick={()=>edit(view)}>Modifier</Btn><Btn color={C.red} onClick={()=>remove(view)}>Supprimer</Btn></>}
@@ -2094,7 +2213,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
   }
 
   return <div>
-    {formOpen&&<div onClick={e=>e.target===e.currentTarget&&setFormOpen(false)} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:C.card,borderTop:'4px solid '+C.blue,borderRadius:14,padding:24,width:820,maxWidth:'100%',maxHeight:'92vh',overflow:'auto'}}>
+    {formOpen&&<div onClick={e=>e.target===e.currentTarget&&cancelHorseForm()} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:C.card,borderTop:'4px solid '+C.blue,borderRadius:14,padding:24,width:820,maxWidth:'100%',maxHeight:'92vh',overflow:'auto'}}>
       <h2>{f.id?'Modifier le crédit hippique':'Nouveau crédit hippique'}</h2>
       <section className="bvh-form-part"><h3>Client</h3><div className="bvh-form-grid">
           <div className="bvh-form-span"><Select label="Client existant" value={f.client_id} onChange={e=>pick(e.target.value)}><option value="">— Sélectionner —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>)}</Select></div>
@@ -2144,12 +2263,12 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
           <Select label="Statut du dossier" value={f.statut} onChange={e=>setF({...f,statut:e.target.value})}><option value="en_cours">En cours</option><option value="termine">Terminé</option><option value="refuse">Refusé</option></Select>
       </div></section>
           <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}>
-            <Btn color="#555" disabled={busy} onClick={()=>setFormOpen(false)}>Annuler</Btn>
+            <Btn color="#555" disabled={busy} onClick={cancelHorseForm}>Annuler</Btn>
             <Btn disabled={busy} onClick={save}>{busy?'Enregistrement…':f.id?'Enregistrer les modifications':'Enregistrer'}</Btn>
           </div>
     </div></div>}
 
-    {window.BF&&<window.BF.OfferBoard
+    {focusId&&!view? <div className="vx-section"><p className="vx-lead">{credits.length?'Dossier introuvable.':'Ouverture du dossier…'}</p>{onLeave&&<button type="button" className="vx-btn quiet" onClick={onLeave}>Retour au client</button>}</div> : window.BF&&<window.BF.OfferBoard
       kicker="Hippodrome Howley & Co."
       title="Crédit de mise hippique"
       note="Le crédit hippique n'a pas d'échéancier. Les filtres suivent le statut du dossier."
@@ -2181,11 +2300,11 @@ function dashboardAppointmentTime(event,date){
   return `${begins} — ${ends}`;
 }
 function TodayAppointments({appointments=[],onOpenAgenda,onOpenClient}){
-  const currentDate=today();
+  const currentDate=agendaToday();
   const events=(appointments||[])
     .filter(e=>appointmentTouchesDate(e,currentDate))
     .sort((a,b)=>agendaInterval(a).start-agendaInterval(b).start);
-  return <div className="bvh-ledger" style={{marginBottom:14}}>
+  return <div className="bvh-ledger" style={{marginTop:54,marginBottom:14}}>
     <div className="bvh-today-agenda-head">
       <div><b>Rendez-vous du jour</b><span className="bvh-today-agenda-count">{events.length} prévu{events.length===1?'':'s'} · {fDate(currentDate)}</span></div>
       <Btn color="#5f4725" onClick={onOpenAgenda}>Ouvrir l’agenda</Btn>
@@ -2202,8 +2321,9 @@ function TodayAppointments({appointments=[],onOpenAgenda,onOpenClient}){
     })}
   </div>
 }
-function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenAgenda,onOpenClient,onOpenLoan,notify}){
+function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenAgenda,onOpenClient,onOpenLoan,onOpenPage,notify}){
   const[reminderTarget,setReminderTarget]=useState(null);
+  const[dueTab,setDueTab]=useState('tous');
 
   const paidAmountForLoan=l=>(l.echeances||[]).filter(e=>e.statut==='paye').reduce((sum,e)=>sum+Number(e.montant||0),0);
   const remainingForLoan=l=>Math.max(Number(l.total_a_rembourser||0)-paidAmountForLoan(l),0);
@@ -2292,231 +2412,108 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
     ...upcoming.filter(e=>e.d>=0).slice(0,3).map(e=>({icon:'⏱️',title:`${e.loan.prenom} ${e.loan.nom}`,sub:`Échéance ${fDate(e.date)}`,tag:'À traiter',color:'#8b642c',right:e.d===0?"Aujourd’hui":`${e.d} j`}))
   ].slice(0,5);
 
-  const dossierPreview=[...loans].sort((a,b)=>{
-    const order={retards:0,recouvrement:1,aujourdhui:2,avenir:3,clotures:4,jamais_rembourse:5};
-    const ak=loanStatus(a),bk=loanStatus(b);
-    if(order[ak]!==order[bk])return order[ak]-order[bk];
-    return rpIso(unpaidForLoan(a)[0]?.date||'9999-12-31').localeCompare(rpIso(unpaidForLoan(b)[0]?.date||'9999-12-31'));
-  }).slice(0,6);
-
-  function csvCell(value){
-    const text=String(value??'').replaceAll('"','""');
-    return `"${text}"`;
-  }
-  function downloadTextFile(filename,content,type='text/plain;charset=utf-8'){
-    const blob=new Blob([content],{type});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download=filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),700);
-  }
-  function exportBankData(){
-    const rows=[
-      ['Dossier','Client','Agence','Capital prêté','Total à rembourser','Déjà payé','Restant','Statut','Prochaine échéance','Statut recouvrement','Notes recouvrement']
-    ];
-    [...loans].sort((a,b)=>String(a.loan_id||'').localeCompare(String(b.loan_id||''))).forEach(l=>{
-      const status=loanStatus(l);
-      const next=unpaidForLoan(l)[0];
-      rows.push([
-        l.loan_id||'',
-        `${l.prenom||''} ${l.nom||''}`.trim(),
-        agenceLabel(loanAgence(l)),
-        Number(l.somme||0).toFixed(2),
-        Number(l.total_a_rembourser||0).toFixed(2),
-        paidAmountForLoan(l).toFixed(2),
-        remainingForLoan(l).toFixed(2),
-        statusMeta[status]?.label||status,
-        next?fDate(next.date):'',
-        recouvrementLabel(l.recouvrement_status),
-        l.recouvrement_notes||''
-      ]);
-    });
-    const csv='\ufeff'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
-    downloadTextFile(`registre-bancaire-${today()}.csv`,csv,'text/csv;charset=utf-8');
-    notify?.('Export des données téléchargé');
-  }
-  function generateBankReport(){
-    const ranking=[...agencyStats].sort((a,b)=>b.score-a.score);
-    const lines=[
-      'RAPPORT BANCAIRE — REGISTRE DE RECKLESS',
-      `Date : ${stamp1904(new Date())}`,
-      '',
-      'SYNTHÈSE',
-      `- Capital prêté : ${fCur(capitalPrete)}`,
-      `- Capital à récupérer : ${fCur(restant)}`,
-      `- Encaissements validés : ${fCur(encaisse)}`,
-      `- Prêts actifs : ${totalLoans-statusCounts.clotures}`,
-      `- Dossiers clôturés : ${statusCounts.clotures}`,
-      `- Retards : ${statusCounts.retards}`,
-      `- Recouvrement : ${statusCounts.recouvrement}`,
-      `- Taux de clôture : ${formatPercent(tauxCloture)}`,
-      `- Taux de remboursement : ${formatPercent(tauxRemboursement)}`,
-      '',
-      'RÉPARTITION DES DOSSIERS',
-      ...donutSegments.map(s=>`- ${s.label} : ${s.count}${totalLoans?` (${formatPercent((s.count/totalLoans)*100)})`:''}`),
-      '',
-      'SANTÉ DES AGENCES',
-      ...ranking.map((b,i)=>`${i+1}. ${b.label} — Score ${b.score} — Encaissements ${fCur(b.paid)} — Actifs ${b.active} — Retards ${b.late} — Recouvrement ${b.recovery} — Clôturés ${b.closed}`),
-      '',
-      'ALERTES PRIORITAIRES',
-      ...(alerts.length?alerts.map(a=>`- ${a.title} — ${a.tag} — ${a.right} — ${a.sub}`):['- Aucune alerte prioritaire.']),
-      '',
-      'DOSSIERS À SURVEILLER',
-      ...(dossierPreview.length?dossierPreview.map(l=>`- ${l.loan_id} — ${l.prenom||''} ${l.nom||''} — ${agenceLabel(loanAgence(l))} — ${statusMeta[loanStatus(l)]?.label||loanStatus(l)} — Restant ${fCur(remainingForLoan(l))}`):['- Aucun dossier à afficher.'])
-    ];
-    downloadTextFile(`rapport-bancaire-${today()}.txt`,lines.join('\r\n'));
-    notify?.('Rapport bancaire généré');
-  }
-
   function savedReminder(updatedLoan){onLoanUpdate?.(updatedLoan);notify?.('Rappel enregistré dans le registre');}
+  const liveRows=[];
+  loans.forEach(l=>{
+    if(loanStatus(l)==='clotures')return;
+    (l.echeances||[]).forEach((e,i)=>{if(e.statut!=='paye')liveRows.push({...e,loan:l,i,d:daysDiff(e.date)});});
+  });
+  liveRows.sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));
+  const shownRows=liveRows.filter(e=>dueTab==='tous'||(dueTab==='retard'?e.d<0:e.d>=0)).slice(0,8);
+  const ranked=[...agencyStats].sort((a,b)=>b.score-a.score);
 
-  return <div className="bvh-bank-dashboard">
-    <div className="bvh-bank-top">
-      <div>
-        <small>Registre central des opérations bancaires</small>
-        <h1>Tableau de bord</h1>
-        <p>Analyse bancaire, santé des agences, dossiers à surveiller et rentabilité opérationnelle.</p>
+  return <div className="vx-home">
+    <header className="vx-hero">
+      <span className="vx-pill"><i></i> Registre bancaire · {date1904()}</span>
+      <h1>Banque<br/>Fédérale</h1>
+      <p>Choisis un client pour retrouver ses prêts, son épargne et ses autres contrats. {me?.username} · {roleLabel(me)}</p>
+      <div className="vx-hero-actions">
+        <button type="button" className="vx-btn primary" onClick={()=>onOpenPage?.('clients')}>Choisir un client</button>
+        <button type="button" className="vx-btn quiet" onClick={()=>document.getElementById('vx-echeances')?.scrollIntoView({behavior:'smooth',block:'start'})}>Voir les échéances</button>
       </div>
-      <div className="bvh-bank-date">
-        <b>{date1904()}</b>
-        <span>{me?.username} — {roleLabel(me)}</span>
+      <div className="vx-stats">
+        <div><b>{fCur(capitalPrete)}</b>Capital prêté</div>
+        <div><b>{clients.length}</b>Clients</div>
+        <div><b>{totalLoans-statusCounts.clotures}</b>Prêts ouverts</div>
+        <div><b>{statusCounts.retards}</b>Retards</div>
       </div>
-    </div>
+    </header>
 
-    <div className="bvh-bank-kpis">
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#d7a64d'}}><div className="bvh-bank-kpi-icon">🏛️</div><label>Capital prêté</label><strong>{fCur(capitalPrete)}</strong><span>Montant nominal accordé</span><em>↗ Portefeuille total</em></div>
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#45c47d'}}><div className="bvh-bank-kpi-icon">💰</div><label>Capital à récupérer</label><strong>{fCur(restant)}</strong><span>Reste à encaisser</span><em>{formatPercent(tauxRemboursement)} remboursé</em></div>
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#4d8fbd'}}><div className="bvh-bank-kpi-icon">📜</div><label>Prêts actifs</label><strong>{totalLoans-statusCounts.clotures}</strong><span>{clients.length} clients enregistrés</span><em>↗ Suivi opérationnel</em></div>
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#d95343'}}><div className="bvh-bank-kpi-icon">⚠️</div><label>Retards</label><strong>{statusCounts.retards}</strong><span>Hors dossiers clôturés</span><em style={{color:statusCounts.retards?'#ffb0a6':'#45c47d'}}>{statusCounts.retards?'À surveiller':'Aucun retard'}</em></div>
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#5d6169'}}><div className="bvh-bank-kpi-icon">✅</div><label>Dossiers clôturés</label><strong>{statusCounts.clotures}</strong><span>Prêts soldés ou clôturés</span><em>{formatPercent(tauxCloture)} du registre</em></div>
-      <div className="bvh-bank-kpi" style={{'--kpi-color':'#8f58b3'}}><div className="bvh-bank-kpi-icon">⚖️</div><label>Recouvrement</label><strong>{statusCounts.recouvrement}</strong><span>Dossiers en procédure</span><em style={{color:statusCounts.recouvrement?'#f3d58a':'#45c47d'}}>{statusCounts.recouvrement?'Action requise':'Stable'}</em></div>
-    </div>
+    <section className="vx-section">
+      <div className="vx-head">
+        <div><h2>Agences ouvertes</h2><p className="vx-lead" style={{textAlign:'left',margin:0}}>Volume encaissé, dossiers et score de chaque comptoir.</p></div>
+      </div>
+      <div className="vx-grid">
+        {ranked.slice(0,6).map(b=><article className="vx-card" key={b.key}>
+          <header><span>{b.label}</span><span>{b.total} dossiers</span></header>
+          <h3>{fCur(b.paid)}</h3>
+          <p>{b.active} ouverts · {b.late} retards · {b.recovery} recouvrements</p>
+          <div className="vx-bar"><i style={{width:Math.max(6,b.score)+'%'}}></i></div>
+        </article>)}
+      </div>
+    </section>
 
-    <div className="bvh-bank-grid">
-      <section className="bvh-bank-panel">
-        <div className="bvh-bank-panel-title">Répartition des dossiers <small>{totalLoans} dossiers</small></div>
-        <div className="bvh-bank-panel-body">
-          <div className="bvh-bank-donut-wrap">
-            <div className="bvh-bank-donut" style={{background:donutGradient}}>
-              <div className="bvh-bank-donut-inner"><div><span>Total</span><strong>{totalLoans}</strong><span>dossiers</span></div></div>
-            </div>
-            <div className="bvh-bank-legend">
-              {donutSegments.map(s=><div className="bvh-bank-legend-row" key={s.key}><i className="bvh-bank-dot" style={{'--dot':s.color}}></i><span>{s.label}</span><b>{s.count} {totalLoans?`(${formatPercent((s.count/totalLoans)*100)})`:''}</b></div>)}
-            </div>
+    <section className="vx-section">
+      <h2>Résultats des prêts</h2>
+      <p className="vx-lead">{formatPercent(tauxRemboursement)} du capital attendu est déjà encaissé. {formatPercent(tauxCloture)} des dossiers sont clôturés.</p>
+      <div className="vx-grid-2">
+        <article className="vx-card">
+          <header><span>À récupérer</span><span>Encaissé {fCur(encaisse)}</span></header>
+          <h3>{fCur(restant)}</h3>
+          <div className="vx-bar"><i style={{width:Math.min(100,tauxRemboursement)+'%'}}></i></div>
+        </article>
+        <article className="vx-card">
+          <header><span>Recouvrement</span><span>{statusCounts.clotures} clôturés</span></header>
+          <h3>{statusCounts.recouvrement} dossiers</h3>
+          <p>Procédures ouvertes. {statusCounts.jamais_rembourse||0} jamais remboursés.</p>
+        </article>
+      </div>
+    </section>
+
+    <section className="vx-section" id="vx-echeances">
+      <div className="vx-head">
+        <h2>Échéances à suivre</h2>
+        <div className="vx-tabs">
+          {[['tous','Toutes'],['retard','Retards'],['avenir','À venir']].map(([id,label])=><button type="button" key={id} className={dueTab===id?'on':''} onClick={()=>setDueTab(id)}>{label}</button>)}
+        </div>
+      </div>
+      {shownRows.length===0?<p className="vx-lead">Aucune échéance dans ce filtre.</p>:shownRows.map((e,i)=>{
+        const late=e.d<0;
+        return <div className={'vx-row '+(late?'is-late':'is-soon')} key={e.loan.id+'-'+i}>
+          <div><b>{e.loan.prenom} {e.loan.nom}</b><small>{e.loan.loan_id} · {agenceLabel(loanAgence(e.loan))}</small></div>
+          <span>{fCur(e.montant)}</span>
+          <span>{fDate(e.date)} · {late?Math.abs(e.d)+' j de retard':e.d===0?'aujourd’hui':'dans '+e.d+' j'}</span>
+          <span style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+            <Btn color="#555" onClick={()=>setReminderTarget(e)}>Rappel</Btn>
+            <Btn color={C.green} onClick={()=>onMark(e.loan,e.i,true)}>Valider</Btn>
+          </span>
+        </div>;
+      })}
+    </section>
+
+    <section className="vx-section">
+      <h2>Agences à surveiller</h2>
+      <div className="vx-grid-2">
+        <div>{ranked.slice(0,5).map((b,idx)=><article className="vx-card" key={b.key} style={{marginBottom:10}}>
+          <header><span>{idx+1}. {b.label}</span><b style={{color:'#fff'}}>{b.score}</b></header>
+          <p>{fCur(b.paid)} encaissés · {b.active} actifs</p>
+          <div className="vx-bar"><i style={{width:Math.max(6,b.score)+'%'}}></i></div>
+        </article>)}</div>
+        <div>
+          {alerts.length===0?<article className="vx-card"><h3>Rien d’urgent</h3><p>Aucune alerte prioritaire pour le moment.</p></article>:alerts.map((a,i)=><article className="vx-card" key={i} style={{marginBottom:10}}>
+            <header><span>{a.tag}</span><span>{a.right}</span></header>
+            <h3>{a.title}</h3>
+            <p>{a.sub}</p>
+          </article>)}
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:8}}>
+            <button type="button" className="vx-btn quiet" onClick={()=>onOpenAgenda?.()}>Agenda</button>
           </div>
         </div>
-      </section>
-
-      <section className="bvh-bank-panel">
-        <div className="bvh-bank-panel-title">Performance par agence <small>Encaissements · clôtures · score</small></div>
-        <div className="bvh-bank-panel-body">
-          <div className="bvh-bank-chart-legend"><span><i className="bvh-bank-dot" style={{'--dot':'#45c47d'}}></i>Encaissements</span><span><i className="bvh-bank-dot" style={{'--dot':'#d7a64d'}}></i>Dossiers clôturés</span><span><i className="bvh-bank-dot" style={{'--dot':'#8f58b3'}}></i>Score</span></div>
-          <div className="bvh-bank-bars">
-            {agencyStats.map(b=><div key={b.key} className="bvh-bank-bar-group" title={`${b.label} · score ${b.score}`}>
-              <div className="bvh-bank-bar paid" style={{height:Math.max(8,(b.paid/maxPaid)*145)}}></div>
-              <div className="bvh-bank-bar closed" style={{height:Math.max(8,(b.closed/maxClosed)*145)}}></div>
-              <div className="bvh-bank-bar score" style={{height:Math.max(8,(b.score/100)*145)}}></div>
-              <div className="bvh-bank-bar-label">{b.label}</div>
-            </div>)}
-          </div>
-        </div>
-      </section>
-
-      <section className="bvh-bank-panel">
-        <div className="bvh-bank-panel-title">Rentabilité globale <small>Remboursement</small></div>
-        <div className="bvh-bank-panel-body">
-          <div className="bvh-bank-gauge-row">
-            <div className="bvh-bank-gauge" style={{background:`conic-gradient(#45c47d 0 ${Math.min(100,tauxRemboursement)}%,#343434 ${Math.min(100,tauxRemboursement)}% 100%)`}}>
-              <div className="bvh-bank-gauge-inner">{formatPercent(tauxRemboursement)}</div>
-            </div>
-            <div className="bvh-bank-gauge-info">
-              <div><span>Encaissements</span><b>{fCur(encaisse)}</b></div>
-              <div><span>Objectif</span><b>70.0%</b></div>
-              <div><span>Écart</span><b style={{color:tauxRemboursement>=70?'#45c47d':'#ffb0a6'}}>{formatPercent(tauxRemboursement-70)}</b></div>
-              <div><span>Clôture</span><b>{formatPercent(tauxCloture)}</b></div>
-            </div>
-          </div>
-          <div style={{marginTop:16}}>
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{width:'100%',height:95,display:'block'}}>
-              <polyline points={linePoints} fill="none" stroke="#45c47d" strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>
-              <polyline points={`0,100 ${linePoints} 100,100`} fill="rgba(69,196,125,.18)" stroke="none"/>
-            </svg>
-            <p style={{color:'#9f8550',fontSize:12,marginTop:6}}>Encaissements cumulés sur les dernières échéances payées</p>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <div className="bvh-bank-grid-2">
-      <section className="bvh-bank-panel">
-        <div className="bvh-bank-panel-title">Santé des agences <small>Classement opérationnel</small></div>
-        <div className="bvh-bank-panel-body" style={{overflowX:'auto'}}>
-          <table className="bvh-bank-health-table">
-            <thead><tr><th>Agence</th><th>Score</th><th>Encaissements</th><th>Actifs</th><th>Retards</th><th>Recouv.</th><th>Tendance</th></tr></thead>
-            <tbody>{agencyStats.sort((a,b)=>b.score-a.score).map((b,idx)=><tr key={b.key}>
-              <td><b>{idx===0?'🥇 ':idx===1?'🥈 ':'🥉 '}{b.label}</b></td>
-              <td><span className="bvh-bank-score">{b.score}</span></td>
-              <td>{fCur(b.paid)}</td>
-              <td>{b.active}</td>
-              <td>{b.late}</td>
-              <td>{b.recovery}</td>
-              <td><div className="bvh-bank-spark" style={{'--spark':b.score>=75?'#45c47d':b.score>=55?'#d7a64d':'#d95343'}}>{[30,44,38,58,64,78].map((h,i)=><span key={i} style={{height:Math.max(5,h*(b.score/100)/1.4)}}></span>)}</div></td>
-            </tr>)}</tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="bvh-bank-panel">
-        <div className="bvh-bank-panel-title">Alertes prioritaires <small>{alerts.length} à traiter</small></div>
-        <div className="bvh-bank-panel-body">
-          <div className="bvh-bank-activity">
-            {alerts.length===0?<p style={{color:'#b69b68'}}>Aucune alerte prioritaire pour le moment.</p>:alerts.map((a,i)=><div className="bvh-bank-activity-row" key={i}>
-              <i>{a.icon}</i>
-              <div><b>{a.title}</b><small>{a.sub}</small></div>
-              <span className="bvh-bank-pill" style={{'--pill':a.color}}>{a.tag} · {a.right}</span>
-            </div>)}
-          </div>
-          <div className="bvh-bank-actions" style={{marginTop:16}}>
-            <button className="bvh-bank-action primary" onClick={()=>onOpenAgenda?.()}>🗓️ Ouvrir l’agenda</button>
-            <button className="bvh-bank-action" onClick={exportBankData}>⬇️ Exporter les données</button>
-            <button className="bvh-bank-action" onClick={generateBankReport}>📄 Générer un rapport</button>
-          </div>
-        </div>
-      </section>
-    </div>
-
-    <section className="bvh-bank-panel">
-      <div className="bvh-bank-panel-title">Aperçu des dossiers <small>Priorité automatique</small></div>
-      <div className="bvh-bank-panel-body" style={{overflowX:'auto'}}>
-        <table className="bvh-bank-dossier-table">
-          <thead><tr><th>Dossier</th><th>Client</th><th>Agence</th><th>Montant</th><th>Restant</th><th>Échéance</th><th>Statut</th></tr></thead>
-          <tbody>{dossierPreview.map(l=>{
-            const status=loanStatus(l);
-            const next=unpaidForLoan(l)[0];
-            return <tr key={l.id} onClick={()=>onOpenLoan?.(l.id)} style={{cursor:'pointer'}}>
-              <td>{l.loan_id}</td>
-              <td>{l.prenom} {l.nom}</td>
-              <td>{agenceLabel(loanAgence(l))}</td>
-              <td>{fCur(l.somme)}</td>
-              <td>{fCur(remainingForLoan(l))}</td>
-              <td>{next?fDate(next.date):'—'}</td>
-              <td><span className="bvh-bank-pill" style={{'--pill':statusMeta[status].color}}>{statusMeta[status].label}</span></td>
-            </tr>
-          })}</tbody>
-        </table>
       </div>
     </section>
 
     <TodayAppointments appointments={appointments} onOpenAgenda={onOpenAgenda} onOpenClient={onOpenClient}/>
 
-    <div className="bvh-ledger bvh-bank-due-panel"><div className="bvh-ledger-title">Échéances à traiter</div>{upcoming.length===0?<p className="bvh-empty">Aucune échéance.</p>:upcoming.map((e,i)=>{const last=latestReminder(e);return <div className="bvh-row bvh-due-row bvh-due-row-reminder" key={i}>
-      <button className="bvh-due-loan-link" onClick={()=>onOpenLoan?.(e.loan.id)} title="Ouvrir la fiche détaillée du prêt">{e.loan.prenom} {e.loan.nom}<small>↗ Voir le prêt{last?` · ${reminderSummary(last)}`:' · Aucun rappel noté'}</small></button>
-      <span>{fCur(e.montant)}</span><span>{fDate(e.date)}</span><Badge s={st(e)}/><span className="bvh-due-actions"><Btn color="#8b642c" onClick={()=>setReminderTarget(e)}>Rappel</Btn><Btn color={C.green} onClick={()=>onMark(e.loan,e.i,true)}>Valider paiement</Btn></span>
-    </div>})}</div>
     <ReminderModal open={!!reminderTarget} loan={reminderTarget?.loan} echeance={reminderTarget} echeanceIndex={reminderTarget?.i} onClose={()=>setReminderTarget(null)} onSaved={savedReminder} me={me}/>
   </div>
 }
@@ -2641,25 +2638,30 @@ function LifeInsurancePage(props){
 }
 
 function App(){
-  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('dashboard'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
+  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('clients'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
   const notify=m=>{setToast(m);setTimeout(()=>setToast(''),3000)};
   async function loadAll(user){
-    const req=[api.loans(),api.clients(),api.agenda(),api.lifeInsurance()];
-    if(hasPermission(user,'users.read')) req.push(api.users());
-    if(hasPermission(user,'users.read')) req.push(api.logs());
+    const booksKeys=['speculative_funds','pawn_loans','consigne_contracts','term_savings','payroll_contracts','goldstein_booklets'];
+    const req=[api.loans(),api.clients(),api.agenda(),api.lifeInsurance(),api.horseCredits(),...booksKeys.map(key=>api.service(key))];
+    if(canOpenDirection(user)) req.push(api.users(),api.logs());
     const r=await Promise.allSettled(req);
-    setLoans(r[0].status==='fulfilled'?r[0].value:[]);
-    setClients(r[1].status==='fulfilled'?r[1].value:[]);
-    setAppointments(r[2].status==='fulfilled'?r[2].value:[]);
-    setLifeInsurance(r[3].status==='fulfilled'?r[3].value:[]);
-    let i=4;
-    if(hasPermission(user,'users.read') && r[i]?.status==='fulfilled')setUsers(r[i].value);
-    if(hasPermission(user,'users.read') && r[i+1]?.status==='fulfilled')setLogs(r[i+1].value);
+    const rows=i=>r[i]?.status==='fulfilled'&&Array.isArray(r[i].value)?r[i].value:[];
+    setLoans(rows(0));
+    setClients(rows(1));
+    setAppointments(rows(2));
+    setLifeInsurance(rows(3));
+    setHorses(rows(4));
+    const next={};
+    booksKeys.forEach((key,index)=>{next[key]=rows(5+index);});
+    setBooks(next);
+    let i=5+booksKeys.length;
+    if(canOpenDirection(user) && r[i]?.status==='fulfilled')setUsers(Array.isArray(r[i].value)?r[i].value:(r[i].value.users||[]));
+    if(canOpenDirection(user) && r[i+1]?.status==='fulfilled')setLogs(r[i+1].value||[]);
   }
   useEffect(()=>{(async()=>{try{const r=await api.me();setMe(r.user);await loadAll(r.user);}catch{}finally{setLoading(false)}})()},[]);
 
   useEffect(()=>{
-    if(!me || !['dashboard','prets'].includes(page) || loanDraftActive) return;
+    if(!me || !['dashboard','prets','clients'].includes(page) || loanDraftActive) return;
     let active=true;
     const syncLoans=async()=>{
       if(document.visibilityState!=='visible') return;
@@ -2696,8 +2698,8 @@ function App(){
   async function mark(loan,i,val){const es=[...(loan.echeances||[])];es[i]={...es[i],statut:val?'paye':'attente'};const allPaid=es.length>0&&es.every(e=>e.statut==='paye');const patch={id:loan.id,echeances:es};if(allPaid)patch.recouvrement_status='cloture';else if((loan.recouvrement_status||'')==='cloture')patch.recouvrement_status='aucun';try{const u=await api.updateLoan(patch);setLoans(loans.map(x=>x.id===u.id?u:x));notify(allPaid?'Paiement validé · prêt clôturé automatiquement':val?'Paiement validé':'Paiement annulé')}catch(e){notify('⚠ '+e.message)}}
   if(loading)return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>Chargement…</div>;
   if(!me)return <Login onLogin={onLogin}/>;
-  const menu=[['dashboard','🏛️','Tableau'],['prets','📜','Prêts'],['assurances','🛡️','Assurances-vie'],['fonds','📈','Fonds spéculatifs'],['gage','🏷️','Prêt sur gage'],['consigne','🔐','Consignes'],['terme','⏳','Épargne à terme'],['paie','💼','Gestion de paie'],['goldstein','📒','Livret Goldstein'],['clients','👤','Clients'],['agenda','🗓️','Agenda'],['hippique','🏇','Crédit hippique']];
-  if(hasPermission(me,'users.read')) menu.push(['users','🔐','Comptes'],['logs','📖','Journal']);
+  const menu=[['clients','','Clients'],['dashboard','','Vue banque'],['agenda','','Agenda']];
+  if(canOpenDirection(me)) menu.push(['users','','Comptes'],['logs','','Journal']);
   async function refreshSharedData(){
     if(!me) return;
     setRefreshing(true);
@@ -2731,26 +2733,13 @@ function App(){
     choosePage('agenda');
   }
   const loansForActiveBank=loans.filter(l=>activeAgence==='toutes'||loanAgence(l)===activeAgence);
-  return <div className="bvh-shell"><Toast msg={toast}/><FooterInfoModal active={footerPage} onClose={()=>setFooterPage(null)}/>
-    <div className="bvh-mobile-top">
-      <button className="bvh-mobile-menu-button" aria-label="Ouvrir le menu" onClick={()=>setMenuOpen(!menuOpen)}>{menuOpen?'✕':'☰'}</button>
-      <div className="bvh-mobile-title"><b>Banque Fédérale</b><span>Institution établie en 1904 · {roleLabel(me)}</span></div>
-    </div>
-    <div className={'bvh-menu-backdrop '+(menuOpen?'open':'')} onClick={()=>setMenuOpen(false)}></div>
-    <aside className={'bvh-sidebar '+(menuOpen?'open':'')}>
-      <div className="bvh-brand bvh-brand-stable">
-        <div className="bvh-brand-card">
-          <img
-            className="bvh-brand-logo-stable"
-            src="/logo-registre-reckless.png"
-            alt="Banque Fédérale — Institution établie en 1904"
-          />
-        </div>
-      </div>
-      <nav className="bvh-nav">{menu.map(m=><button key={m[0]} className={page===m[0]?'active':''} onClick={()=>choosePage(m[0])}>{m[1]} {m[2]}</button>)}</nav>
-      <div className="bvh-bank-context">
-        <span className="bvh-bank-context-title">Périmètre du registre</span>
-        <Select label="Banque consultée" value={activeAgence} onChange={e=>setActiveAgence(e.target.value)}>
+  return <div className="vx-app"><Toast msg={toast}/><FooterInfoModal active={footerPage} onClose={()=>setFooterPage(null)}/>
+    <header className="vx-top">
+      <button type="button" className="vx-logo" onClick={()=>choosePage('clients')}><img src="/logo-registre-reckless.png" alt=""/><span>Banque Fédérale</span></button>
+      <button type="button" className="vx-burger" aria-label="Ouvrir le menu" onClick={()=>setMenuOpen(!menuOpen)}>{menuOpen?'✕':'☰'}</button>
+      <nav className={'vx-links '+(menuOpen?'open':'')}>{menu.map(m=><button type="button" key={m[0]} className={page===m[0]?'active':''} onClick={()=>choosePage(m[0])}>{m[2]}</button>)}</nav>
+      <div className="vx-tools">
+        <select className="vx-select" aria-label="Banque consultée" value={activeAgence} onChange={e=>setActiveAgence(e.target.value)}>
           <option value="toutes">Toutes les banques</option>
           <option value="saint_denis">Saint-Denis</option>
           <option value="van_horn">Van Horn</option>
@@ -2759,14 +2748,14 @@ function App(){
           <option value="blackwater">Blackwater</option>
           <option value="strawberry">Strawberry</option>
           <option value="sunset">Sunset</option>
-        </Select>
+        </select>
+        <span className="vx-user"><b>{me.username}</b><small>{roleLabel(me)}</small></span>
+        <button type="button" className="vx-btn quiet" onClick={logout}>Sortir</button>
       </div>
-      <div className="bvh-pandore-panel"><div className="bvh-pandore-mark">P</div><div><b>Pandore Studio</b><span>Conception &amp; développement</span></div></div>
-      <div className="bvh-user"><small style={{color:'#9f8550',textTransform:'uppercase',letterSpacing:'.12em'}}>Connecté</small><br/><b>{me.username}</b><p style={{color:'#d0b272',fontSize:13}}>{roleLabel(me)}</p><Btn full color="#5f4725" onClick={logout} style={{marginTop:12}}>Déconnexion</Btn></div>
-    </aside>
-    <main className="bvh-main">
-      {refreshing&&<div style={{position:'fixed',right:18,top:18,zIndex:998,background:'#25170c',border:'1px solid #c9943c',color:'#f3d58a',borderRadius:8,padding:'8px 12px',fontWeight:800,fontSize:13,boxShadow:'0 8px 24px #0008'}}>Actualisation des données…</div>}
-      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} appointments={appointments} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickLoan={openQuickLoan} onQuickAppointment={openQuickAppointment}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&<LogsPage logs={logs}/>}
+    </header>
+    <main className="vx-main">
+      {refreshing&&<div className="vx-refresh">Actualisation…</div>}
+      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>
   </div>
