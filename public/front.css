@@ -168,6 +168,13 @@
     background: rgba(214, 169, 90, .16); color: var(--vx-gold-2); font-style: normal; font-weight: 800;
   }
   
+  /* ---------- Carte de chiffres clés ---------- */
+  .vx-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 20px 26px; }
+  .vx-summary > div { display: flex; flex-direction: column; gap: 4px; }
+  .vx-summary b { color: var(--vx-gold-2); font-family: var(--vx-serif); font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .vx-summary span { color: var(--vx-muted); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  @media (max-width: 900px) { .vx-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  
   /* ---------- Pavés de statistiques (PALIER I / II / III…) ---------- */
   .vx-offer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 24px; }
   .vx-offer-grid .vx-card > header {
@@ -256,6 +263,25 @@
     letter-spacing: .14em; text-transform: uppercase;
     background: rgba(0, 0, 0, .18) !important; border-bottom: 1px solid var(--vx-line-soft) !important;
   }
+  /* Entête de page commune (Banque, Services, Clients, Agenda…) */
+  .bvh-topbar {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 22px 26px !important; margin-bottom: 22px !important;
+  }
+  .bvh-topbar small {
+    display: block; margin-bottom: 4px;
+    color: var(--vx-gold) !important; font-size: 11px; font-weight: 800;
+    letter-spacing: .14em; text-transform: uppercase;
+  }
+  .bvh-topbar h1 { font-size: 32px; line-height: 1.1; margin: 0; }
+  .bvh-topbar p { color: var(--vx-muted) !important; font-size: 14px; }
+  .bvh-topbar .vx-hero-actions { justify-content: flex-end; flex-wrap: nowrap; }
+  .bvh-topbar + .vx-hero { text-align: left; }
+  @media (max-width: 900px) {
+    .bvh-topbar { flex-direction: column; align-items: flex-start; }
+    .bvh-topbar .vx-hero-actions { flex-wrap: wrap; justify-content: flex-start; }
+  }
+  
   .bvh-topbar small, .bvh-empty { color: var(--vx-muted) !important; }
   .bvh-reminder-row, .bvh-statement { border-bottom: 1px solid var(--vx-line-soft) !important; }
   

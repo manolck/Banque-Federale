@@ -7,10 +7,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet" />
 <title>Banque Fédérale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -1539,12 +1539,10 @@ function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsuran
   const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')).toLowerCase().includes(needle)).slice().sort((a,b)=>clientFullName(a).localeCompare(clientFullName(b),'fr'));
   if(selected)return <><ClientDossier client={selected} loans={loans} setLoans={setLoans} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} appointments={appointments} clients={clients} notify={notify} me={me} activeAgence={activeAgence} onBack={()=>setSelectedId(null)} onEdit={edit} onDelete={del} onQuickAppointment={onQuickAppointment} onRefresh={onRefresh}/><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></>;
   return <div className="vx-home">
-    <header className="vx-hero">
-      <span className="vx-pill"><i></i> Registre clientèle</span>
-      <h1>Clients</h1>
-      <p>{clients.length} personnes. Ouvre une fiche pour voir tous les contrats souscrits.</p>
-      <div className="vx-hero-actions"><button type="button" className="vx-btn primary" onClick={add}>Ouvrir un dossier</button></div>
-    </header>
+    <div className="bvh-topbar">
+      <div><small>Registre clientèle</small><h1>Clients</h1><p style={{color:'#d8bc78',marginTop:4}}>{clients.length} personnes. Ouvre une fiche pour voir tous les contrats souscrits.</p></div>
+      <button type="button" className="vx-btn primary" onClick={add}>+ Ouvrir un dossier</button>
+    </div>
     <Inp placeholder="Nom, télégramme ou adresse…" value={query} onChange={e=>setQuery(e.target.value)} style={{margin:'8px auto 22px',maxWidth:520}}/>
     {list.length===0?<p className="vx-lead">Aucun client pour cette recherche.</p>:<div className="vx-grid">{list.map(c=>{const pack=clientPortfolio(c,{loans,life:lifeInsurance,books,horses});return <button type="button" className="vx-card" key={c.id} onClick={()=>setSelectedId(c.id)}><header><span>{clientCode(c)}</span><span>{pack.late?'En retard':'À jour'}</span></header><h3>{clientFullName(c)}</h3><p>{c.telegram||'Télégramme non indiqué'}</p><span>{pack.count?pack.labels.join(' · '):'Aucun contrat'}</span></button>;})}</div>}
     <ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/>
@@ -2537,21 +2535,19 @@ function Dashboard({loans,clients,funds=[],lifeInsurance=[],termSavings=[],golds
   const shownInvestors=allInvestors?investors:investors.slice(0,10);
 
   return <div className="vx-home">
-    <header className="vx-hero">
-      <span className="vx-pill"><i></i> Registre bancaire · {date1904()}</span>
-      <h1>Banque<br/>Fédérale</h1>
-      <p>Choisis un client pour retrouver ses prêts, son épargne et ses autres contrats. {me?.username} · {roleLabel(me)}</p>
+    <div className="bvh-topbar">
+      <div><small>Registre bancaire · {date1904()}</small><h1>Banque Fédérale</h1><p style={{color:'#d8bc78',marginTop:4}}>Choisis un client pour retrouver ses prêts, son épargne et ses autres contrats. {me?.username} · {roleLabel(me)}</p></div>
       <div className="vx-hero-actions">
-        <button type="button" className="vx-btn primary" onClick={()=>onOpenPage?.('clients')}>Choisir un client</button>
         <button type="button" className="vx-btn quiet" onClick={()=>document.getElementById('vx-echeances')?.scrollIntoView({behavior:'smooth',block:'start'})}>Voir les échéances</button>
+        <button type="button" className="vx-btn primary" onClick={()=>onOpenPage?.('clients')}>Choisir un client</button>
       </div>
-      <div className="vx-stats">
-        <div><b>{fCur(capitalPrete)}</b>Capital prêté</div>
-        <div><b>{clients.length}</b>Clients</div>
-        <div><b>{totalLoans-statusCounts.clotures}</b>Prêts ouverts</div>
-        <div><b>{statusCounts.retards}</b>Retards</div>
-      </div>
-    </header>
+    </div>
+    <div className="vx-card vx-summary">
+      <div><b>{fCur(capitalPrete)}</b><span>Capital prêté</span></div>
+      <div><b>{clients.length}</b><span>Clients</span></div>
+      <div><b>{totalLoans-statusCounts.clotures}</b><span>Prêts ouverts</span></div>
+      <div><b>{statusCounts.retards}</b><span>Retards</span></div>
+    </div>
 
     <section className="vx-section">
       <div className="vx-head">
@@ -2873,11 +2869,9 @@ function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence
     return column[2]?fCur(number):String(number);
   }
   return <div className="vx-home">
-    <header className="vx-hero">
-      <span className="vx-pill"><i></i> {scopeLabel} · {date1904()}</span>
-      <h1>Services</h1>
-      <p>Les chiffres suivent la banque choisie en haut de la page.</p>
-    </header>
+    <div className="bvh-topbar">
+      <div><small>{scopeLabel} · {date1904()}</small><h1>Services</h1><p style={{color:'#d8bc78',marginTop:4}}>Les chiffres suivent la banque choisie en haut de la page.</p></div>
+    </div>
     <div className="vx-offer-grid">
       {boards.map(board=>{
         const slot=slotOf(board);
