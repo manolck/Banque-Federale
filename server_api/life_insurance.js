@@ -1,6 +1,6 @@
 const { sb, json, readBody, currentUser, hasPermission, roleRank, logAction, handler } = require('./_lib');
 const { safeId } = require('./ids');
-const { lifeEmbed, requireUrl, rpStamp, nextSerial, text: clip } = require('./discord_forms');
+const { lifeEmbed, rpStamp, nextSerial, text: clip } = require('./discord_forms');
 const { lifeFinancials, lifeAsOf } = require('./money');
 
 const CAPITALS = new Set([1000, 2500, 5000, 7500, 10000]);
@@ -55,8 +55,6 @@ module.exports=(req,res)=>handler(req,res,async()=>{
 
   if(req.method==='POST'){
     const b=await readBody(req),capital=Number(b.target_capital),start=realDate(b.start_date);
-    const linkError=requireUrl(b);
-    if(linkError) return json(res,400,{error:linkError});
     if(!CAPITALS.has(capital)||!start||!clean(b.subscriber_first_name)||!clean(b.subscriber_last_name)||!clean(b.beneficiary_first_name)||!clean(b.beneficiary_last_name))
       return json(res,400,{error:'Contrat incomplet ou palier invalide.'});
     const enrollment=b.enrollment&&typeof b.enrollment==='object'?b.enrollment:{};
