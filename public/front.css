@@ -124,7 +124,7 @@ button:hover { transform: none; }
   background: linear-gradient(180deg, rgba(255,255,255,.03), transparent 30%), var(--vx-card);
   border: 1px solid var(--vx-line); border-radius: 18px; padding: 16px;
 }
-button.vx-card, button.vx-row {
+button.vx-card, button.vx-row, button.vx-rank {
   width: 100%; color: inherit; font: inherit; text-align: left; cursor: pointer;
 }
 button.vx-row { display: grid; }
@@ -152,6 +152,26 @@ button.vx-row { display: grid; }
 .vx-tabs { display: flex; gap: 6px; }
 .vx-tabs button { background: transparent; border: 0; color: var(--vx-muted); border-radius: 999px; padding: 6px 10px; cursor: pointer; font-weight: 700; }
 .vx-tabs button.on { background: #fff; color: #111; }
+.vx-rank {
+  display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  background: #10131a; border: 1px solid var(--vx-line); border-radius: 14px;
+  padding: 12px 14px; margin-bottom: 8px;
+}
+.vx-rank .place {
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: #1c2030; color: #fff; font-weight: 800;
+}
+.vx-rank.is-top .place { background: linear-gradient(180deg, var(--vx-orange-2), var(--vx-orange)); color: #111; }
+.vx-rank b { display: block; }
+.vx-rank small { color: var(--vx-muted); }
+.vx-fiche-foot { margin-top: 54px; display: flex; flex-direction: column; gap: 24px; }
+.vx-fiche-foot .vx-grid-2 { gap: 24px; }
+.vx-offer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 28px; }
+.vx-offer-grid .vx-card h3 { margin: 0 0 4px; font-size: 20px; }
+.vx-offer-grid .vx-card > p { margin: 0 0 16px; }
+.vx-offer-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 12px; }
+.vx-offer-stats b { display: block; color: #fff; font-size: 18px; letter-spacing: -.03em; }
+.vx-offer-empty { margin: 4px 0 0 !important; }
 
 .vx-faq details { border-top: 1px solid var(--vx-line); padding: 14px 0; }
 .vx-faq summary { cursor: pointer; font-weight: 700; }
@@ -198,6 +218,6 @@ button.vx-row { display: grid; }
   .vx-links { display: none; order: 4; width: 100%; flex-direction: column; background: #10131a; border: 1px solid var(--vx-line); border-radius: 16px; padding: 8px; }
   .vx-links.open { display: flex; }
   .vx-user { display: none; }
-  .vx-grid, .vx-grid-2, .vx-row { grid-template-columns: 1fr; }
+  .vx-grid, .vx-grid-2, .vx-row, .vx-offer-grid { grid-template-columns: 1fr; }
   .vx-main { width: calc(100% - 24px); }
 }

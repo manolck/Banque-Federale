@@ -1489,9 +1489,11 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
       <div className="vx-head"><div><h2>{group.title}</h2><p className="vx-lead" style={{textAlign:'left',margin:0}}>{group.items.length?`${group.items.length} contrat${group.items.length>1?'s':''}`:'Aucun contrat'}</p></div><button type="button" className="vx-btn primary" onClick={()=>setDesk({kind:group.kind,service:group.service,create:true})}>Souscrire</button></div>
       {group.items.map(item=><button type="button" className={'vx-row '+(item.tone||'')} key={item.id} onClick={()=>setDesk({kind:group.kind,service:group.service,id:item.id})}><div><b>{item.ref}</b><small>{item.title}</small></div><span>{item.left}<br/>{item.leftLabel}</span><span>{item.right}<br/>{item.rightLabel}</span><div><b>{item.status}</b><small>{item.extra}</small></div></button>)}
     </section>)}
-    <section className="vx-section"><div className="vx-grid-2"><div className="vx-card"><h3>Identité</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div></section>
-    <DocumentPanel client={client} focusSignal={docFocus}/>
-    <NotesPanel client={client} focusSignal={noteFocus}/>
+    <section className="vx-fiche-foot">
+      <div className="vx-grid-2"><div className="vx-card"><h3>Identité</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div>
+      <DocumentPanel client={client} focusSignal={docFocus}/>
+      <NotesPanel client={client} focusSignal={noteFocus}/>
+    </section>
   </div>;
 }
 function ClientModal({open,onClose,onSave,client}){const empty={nom:'',prenom:'',telegram:'',adresse:''};const[f,setF]=useState(empty);useEffect(()=>{if(open)setF(client?{...empty,...client}:empty)},[open,client]);if(!open)return null;async function save(){if(!f.nom||!f.prenom)return alert('Nom et prénom requis');await onSave(f);onClose();}return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:210,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'linear-gradient(180deg,#1e140b,#100a06)',border:'1px solid #805a28',borderTop:'4px solid #c9943c',borderRadius:14,padding:24,width:620,maxWidth:'96vw'}}><h2 style={{color:'#f6d27b',marginBottom:12}}>{client?'Modifier le dossier client':'Ouvrir un dossier client'}</h2><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Prénom" value={f.prenom||''} onChange={e=>setF({...f,prenom:e.target.value})}/><Inp label="Nom" value={f.nom||''} onChange={e=>setF({...f,nom:e.target.value})}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Télégramme" value={f.telegram||''} onChange={e=>setF({...f,telegram:e.target.value})}/><Inp label="Adresse / État" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}><Btn color="#555" onClick={onClose}>Annuler</Btn><Btn color="#8b642c" onClick={save}>Enregistrer</Btn></div></div></div>}
@@ -2321,9 +2323,81 @@ function TodayAppointments({appointments=[],onOpenAgenda,onOpenClient}){
     })}
   </div>
 }
-function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenAgenda,onOpenClient,onOpenLoan,onOpenPage,notify}){
+function moneyNow(value){
+  const number=Number(value);
+  if(!Number.isFinite(number)) return 0;
+  return Math.round((number+Number.EPSILON)*100)/100;
+}
+function fundCapitalNow(row){
+  if(['clos','paye','solde','anticipe'].includes(row?.status)) return 0;
+  const raw=row?.capital_balance!=null && row.capital_balance!=='' ? row.capital_balance : row?.amount;
+  return moneyNow(raw);
+}
+function lifeCapitalNow(row){
+  if(['closed','paid_to_beneficiary','cancelled'].includes(row?.status)) return 0;
+  return moneyNow(row?.financials&&row.financials.balance);
+}
+function termCapitalNow(row){
+  if(row?.settlement || ['clos','paye','solde','anticipe'].includes(row?.status)) return 0;
+  return moneyNow(row?.amount);
+}
+function investmentOwner(row, clients, mode){
+  if(mode==='subscriber'){
+    if(row.subscriber_client_id) return (clients||[]).find(c=>String(c.id)===String(row.subscriber_client_id))||null;
+    const wanted=personKey(`${row.subscriber_first_name||''} ${row.subscriber_last_name||''}`);
+    return wanted ? (clients||[]).find(c=>personKey(`${c.prenom||''} ${c.nom||''}`)===wanted)||null : null;
+  }
+  if(row.client_id) return (clients||[]).find(c=>String(c.id)===String(row.client_id))||null;
+  return (clients||[]).find(c=>rowMatchesClient(c,row))||null;
+}
+function investmentKey(row, linked, mode){
+  if(linked) return String(linked.id);
+  if(mode==='subscriber'){
+    const id=row.subscriber_client_id;
+    if(id) return `id:${id}`;
+    return `name:${personKey(`${row.subscriber_first_name||''} ${row.subscriber_last_name||''}`)||row.id}`;
+  }
+  if(row.client_id) return `id:${row.client_id}`;
+  return `name:${personKey(row.full_name||`${row.prenom||''} ${row.nom||''}`)||row.id}`;
+}
+function investmentName(row, linked, mode){
+  if(linked) return clientFullName(linked);
+  if(mode==='subscriber') return `${row.subscriber_first_name||''} ${row.subscriber_last_name||''}`.trim()||'Investisseur';
+  return row.full_name||`${row.prenom||''} ${row.nom||''}`.trim()||'Investisseur';
+}
+function investorRanking(sources, clients, agency){
+  const groups=new Map();
+  const add=(row, capital, kind, mode)=>{
+    if(agency && agency!=='toutes' && row.agency!==agency) return;
+    if(!(capital>0)) return;
+    const linked=investmentOwner(row, clients, mode);
+    const key=investmentKey(row, linked, mode);
+    const current=groups.get(key)||{key, clientId:linked?linked.id:'', name:investmentName(row, linked, mode), contracts:0, capital:0, counts:{fonds:0,vie:0,terme:0,goldstein:0}};
+    current.contracts+=1;
+    current.counts[kind]+=1;
+    current.capital=moneyNow(current.capital+capital);
+    groups.set(key, current);
+  };
+  (sources.funds||[]).forEach(row=>add(row, fundCapitalNow(row), 'fonds'));
+  (sources.life||[]).forEach(row=>add(row, lifeCapitalNow(row), 'vie', 'subscriber'));
+  (sources.term||[]).forEach(row=>add(row, termCapitalNow(row), 'terme'));
+  (sources.goldstein||[]).forEach(row=>add(row, moneyNow(row.balance), 'goldstein'));
+  return [...groups.values()]
+    .sort((a,b)=>b.capital-a.capital || a.name.localeCompare(b.name,'fr'))
+    .map((row,index)=>({...row, place:index+1}));
+}
+function investmentDetail(counts){
+  const bits=[];
+  if(counts.fonds) bits.push(`${counts.fonds} fonds`);
+  if(counts.vie) bits.push(counts.vie>1?`${counts.vie} assurances-vie`:'1 assurance-vie');
+  if(counts.terme) bits.push(counts.terme>1?`${counts.terme} épargnes`:'1 épargne');
+  if(counts.goldstein) bits.push(counts.goldstein>1?`${counts.goldstein} livrets`:'1 livret');
+  return bits.join(' · ');
+}
+function Dashboard({loans,clients,funds=[],lifeInsurance=[],termSavings=[],goldstein=[],activeAgence='toutes',me,onMark,onLoanUpdate,appointments=[],onOpenAgenda,onOpenClient,onOpenLoan,onOpenPage,notify}){
   const[reminderTarget,setReminderTarget]=useState(null);
   const[dueTab,setDueTab]=useState('tous');
+  const[allInvestors,setAllInvestors]=useState(false);
 
   const paidAmountForLoan=l=>(l.echeances||[]).filter(e=>e.statut==='paye').reduce((sum,e)=>sum+Number(e.montant||0),0);
   const remainingForLoan=l=>Math.max(Number(l.total_a_rembourser||0)-paidAmountForLoan(l),0);
@@ -2421,6 +2495,8 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
   liveRows.sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));
   const shownRows=liveRows.filter(e=>dueTab==='tous'||(dueTab==='retard'?e.d<0:e.d>=0)).slice(0,8);
   const ranked=[...agencyStats].sort((a,b)=>b.score-a.score);
+  const investors=investorRanking({funds,life:lifeInsurance,term:termSavings,goldstein}, clients, activeAgence);
+  const shownInvestors=allInvestors?investors:investors.slice(0,10);
 
   return <div className="vx-home">
     <header className="vx-hero">
@@ -2468,6 +2544,22 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
           <p>Procédures ouvertes. {statusCounts.jamais_rembourse||0} jamais remboursés.</p>
         </article>
       </div>
+    </section>
+
+    <section className="vx-section">
+      <div className="vx-head">
+        <div>
+          <h2>Palmarès des investisseurs</h2>
+          <p className="vx-lead" style={{textAlign:'left',margin:0}}>Classement sur la somme actuelle des fonds, assurances-vie, épargnes à terme et livrets Goldstein.</p>
+        </div>
+        {investors.length>10 && <button type="button" className="vx-btn quiet" onClick={()=>setAllInvestors(v=>!v)}>{allInvestors?'Top 10':`Voir tous (${investors.length})`}</button>}
+      </div>
+      {shownInvestors.length===0?<p className="vx-lead">Aucun investissement en cours.</p>:shownInvestors.map(row=>{
+        const body=<><span className="place">{row.place}</span><div><b>{row.name}</b><small>{investmentDetail(row.counts)}</small></div><span className="sum">{fCur(row.capital)}</span></>;
+        return row.clientId
+          ? <button type="button" className={'vx-rank'+(row.place<=3?' is-top':'')} key={row.key} onClick={()=>onOpenClient?.(row.clientId)}>{body}</button>
+          : <div className={'vx-rank'+(row.place<=3?' is-top':'')} key={row.key}>{body}</div>;
+      })}
     </section>
 
     <section className="vx-section" id="vx-echeances">
@@ -2632,6 +2724,137 @@ function SiteFooter({onOpen}){
   </footer>
 }
 
+const SERVICE_BANKS=['saint_denis','van_horn','valentine','rhodes','blackwater','strawberry','sunset'];
+function serviceBankList(row){
+  if(Array.isArray(row?.agencies)&&row.agencies.length){
+    return [...new Set(row.agencies.map(value=>String(value||'').trim()).filter(Boolean).map(value=>normalizeAgence(value)))];
+  }
+  const raw=row?.agency||row?.agence||row?.bank_code||'';
+  return String(raw).trim()?[normalizeAgence(raw)]:[];
+}
+function loanIsClosed(loan){
+  if(isNeverReimbursed(loan)) return false;
+  if(isLoanRecouvrementCloture(loan)) return true;
+  return (loan.echeances||[]).every(e=>e.statut==='paye');
+}
+function loanPaidNow(loan){
+  return (loan.echeances||[]).filter(e=>e.statut==='paye').reduce((sum,e)=>sum+Number(e.montant||0),0);
+}
+function bump(bucket, key, patch){
+  const slot=bucket[key]||{};
+  Object.entries(patch).forEach(([name,value])=>{slot[name]=(slot[name]||0)+Number(value||0);});
+  bucket[key]=slot;
+}
+function serviceBoard(title, note, columns, rows, assign){
+  const banks={};
+  const total={};
+  SERVICE_BANKS.forEach(key=>{banks[key]={};});
+  rows.forEach(row=>{
+    const patch=assign(row);
+    const keys=patch.banks&&patch.banks.length?patch.banks:[''];
+    bump(total, 'all', patch.values);
+    keys.forEach(key=>bump(banks, key, patch.values));
+  });
+  const extra=Object.keys(banks).filter(key=>key&&!SERVICE_BANKS.includes(key));
+  return {title, note, columns, banks, extra, total:total.all||{}};
+}
+function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes'}){
+  const funds=books.speculative_funds||[];
+  const pawn=books.pawn_loans||[];
+  const consigne=books.consigne_contracts||[];
+  const term=books.term_savings||[];
+  const payroll=books.payroll_contracts||[];
+  const goldstein=books.goldstein_booklets||[];
+  const boards=[
+    serviceBoard('Prêts','Capital prêté, encaissements et reste à recouvrer.',[
+      ['dossiers','Dossiers',false],['open','Ouverts',false],['late','Retards',false],['lent','Prêté',true],['paid','Encaissé',true],['left','Restant',true]
+    ], loans, loan=>{
+      const closed=loanIsClosed(loan);
+      const late=!closed && !isLoanInRecouvrement(loan) && (loan.echeances||[]).some(e=>e.statut!=='paye'&&daysDiff(e.date)<0);
+      const paid=loanPaidNow(loan);
+      const left=Math.max(Number(loan.total_a_rembourser||0)-paid,0);
+      return {banks:[loanAgence(loan)], values:{dossiers:1, open:closed?0:1, late:late?1:0, lent:Number(loan.somme||0), paid, expected:Number(loan.total_a_rembourser||0), left}};
+    }),
+    serviceBoard('Fonds spéculatifs','Capital actuel des dossiers ouverts ou en pause.',[
+      ['dossiers','Dossiers',false],['open','Ouverts',false],['pause','En pause',false],['capital','Capital',true]
+    ], funds, row=>({banks:serviceBankList(row), values:{dossiers:1, open:row.status==='ouvert'?1:0, pause:row.status==='pause'?1:0, capital:fundCapitalNow(row)}})),
+    serviceBoard('Assurances-vie','Solde composé des contrats encore en cours.',[
+      ['dossiers','Contrats',false],['open','En cours',false],['balance','Solde',true]
+    ], lifeInsurance, row=>{
+      const stopped=['closed','paid_to_beneficiary','cancelled'].includes(row.status);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:stopped?0:1, balance:lifeCapitalNow(row)}};
+    }),
+    serviceBoard('Épargne à terme','Somme encore placée.',[
+      ['dossiers','Dossiers',false],['open','En cours',false],['placed','Placé',true]
+    ], term, row=>{
+      const placed=termCapitalNow(row);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:placed>0?1:0, placed}};
+    }),
+    serviceBoard('Livret Goldstein','Somme restante sur les livrets.',[
+      ['dossiers','Livrets',false],['open','Avec solde',false],['balance','Somme',true]
+    ], goldstein, row=>{
+      const balance=moneyNow(row.balance);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:balance>0?1:0, balance}};
+    }),
+    serviceBoard('Prêt sur gage','Montant prêté et somme encore due.',[
+      ['dossiers','Dossiers',false],['open','Ouverts',false],['lent','Prêté',true],['due','À rembourser',true]
+    ], pawn, row=>{
+      const closed=offerClosed('pawn_loans', row);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, lent:closed?0:moneyNow(row.amount), due:closed?0:moneyNow(row.amount_due||row.repayment)}};
+    }),
+    serviceBoard('Consignes','Valeur déposée et redevance hebdomadaire.',[
+      ['dossiers','Contrats',false],['open','Ouverts',false],['stored','Déposé',true],['weekly','Par semaine',true]
+    ], consigne, row=>{
+      const closed=offerClosed('consigne_contracts', row);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, stored:closed?0:moneyNow(row.stored_value), weekly:closed?0:moneyNow(row.weekly_total)}};
+    }),
+    serviceBoard('Gestion de paie','Masse salariale des mandats ouverts.',[
+      ['dossiers','Contrats',false],['open','Ouverts',false],['payroll','Masse',true]
+    ], payroll, row=>{
+      const closed=offerClosed('payroll_contracts', row);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, payroll:closed?0:moneyNow(row.payroll)}};
+    }),
+    serviceBoard('Crédit hippique','Mises des paris encore en cours.',[
+      ['dossiers','Dossiers',false],['open','En cours',false],['stake','Mises',true]
+    ], horses, row=>{
+      const open=!['termine','refuse'].includes(row.statut);
+      return {banks:serviceBankList(row), values:{dossiers:1, open:open?1:0, stake:open?moneyNow(row.montant_total):0}};
+    })
+  ];
+  const scopeLabel=activeAgence==='toutes'?'Toutes les banques':agenceLabel(activeAgence);
+  const payrollShared=payroll.some(row=>{
+    const keys=serviceBankList(row);
+    return keys.length>1 && (activeAgence==='toutes' || keys.includes(activeAgence));
+  });
+  function slotOf(board){
+    return activeAgence==='toutes' ? board.total : (board.banks[activeAgence]||{});
+  }
+  function cell(column, slot){
+    const number=column[0]==='left' ? Math.max(Number(slot?.expected||0)-Number(slot?.paid||0),0) : Number(slot?.[column[0]]||0);
+    return column[2]?fCur(number):String(number);
+  }
+  return <div className="vx-home">
+    <header className="vx-hero">
+      <span className="vx-pill"><i></i> {scopeLabel} · {date1904()}</span>
+      <h1>Services</h1>
+      <p>Les chiffres suivent la banque choisie en haut de la page.</p>
+    </header>
+    <div className="vx-offer-grid">
+      {boards.map(board=>{
+        const slot=slotOf(board);
+        const empty=!slot.dossiers;
+        return <article className="vx-card" key={board.title}>
+          <h3>{board.title}</h3>
+          <p>{board.note}</p>
+          {empty?<p className="vx-offer-empty">Aucun dossier.</p>:<div className="vx-offer-stats">
+            {board.columns.map(column=><div key={column[0]}><b>{cell(column, slot)}</b><span>{column[1]}</span></div>)}
+          </div>}
+        </article>;
+      })}
+    </div>
+    {payrollShared&&<p className="vx-lead">Un mandat de paie couvrant plusieurs banques est compté en entier pour la banque choisie, et une seule fois pour toutes les banques.</p>}
+  </div>;
+}
 function LifeInsurancePage(props){
   const Desk=window.BF&&window.BF.LifeDesk;
   return Desk?<Desk {...props}/>:null;
@@ -2698,7 +2921,7 @@ function App(){
   async function mark(loan,i,val){const es=[...(loan.echeances||[])];es[i]={...es[i],statut:val?'paye':'attente'};const allPaid=es.length>0&&es.every(e=>e.statut==='paye');const patch={id:loan.id,echeances:es};if(allPaid)patch.recouvrement_status='cloture';else if((loan.recouvrement_status||'')==='cloture')patch.recouvrement_status='aucun';try{const u=await api.updateLoan(patch);setLoans(loans.map(x=>x.id===u.id?u:x));notify(allPaid?'Paiement validé · prêt clôturé automatiquement':val?'Paiement validé':'Paiement annulé')}catch(e){notify('⚠ '+e.message)}}
   if(loading)return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>Chargement…</div>;
   if(!me)return <Login onLogin={onLogin}/>;
-  const menu=[['clients','','Clients'],['dashboard','','Vue banque'],['agenda','','Agenda']];
+  const menu=[['dashboard','','Vue banque'],['services','','Services'],['clients','','Clients'],['agenda','','Agenda']];
   if(canOpenDirection(me)) menu.push(['users','','Comptes'],['logs','','Journal']);
   async function refreshSharedData(){
     if(!me) return;
@@ -2755,7 +2978,8 @@ function App(){
     </header>
     <main className="vx-main">
       {refreshing&&<div className="vx-refresh">Actualisation…</div>}
-      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
+      {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence}/>}
+      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>
   </div>
