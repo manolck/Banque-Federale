@@ -227,6 +227,22 @@ function ClientSelect({ clients, value, onChange, label, section }) {
   </Part>;
 }
 
+function dossierClient(form, mode) {
+  function split(value) {
+    const parts = String(value || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return null;
+    return { prenom: parts.slice(0, -1).join(' '), nom: parts[parts.length - 1] };
+  }
+  if (mode === 'fonds') {
+    const name = split(form.full_name);
+    return { id: form.client_id, ...(name || {}), telegram: form.telegram, adresse: form.address, civilite: form.civility, date_naissance: form.birth_date, nationalite: form.nationality };
+  }
+  if (mode === 'company') {
+    const name = split(form.patron);
+    return { id: form.client_id, ...(name || {}), telegram: form.patron_telegram, adresse: form.address, entreprise: form.company_name };
+  }
+  return { id: form.client_id, prenom: form.prenom, nom: form.nom, telegram: form.telegram, adresse: form.address, civilite: form.civility, date_naissance: form.birth_date, nationalite: form.nationality };
+}
 function findClient(clients, id) {
   return (clients || []).find((client) => String(client.id) === String(id));
 }
@@ -600,7 +616,7 @@ function serviceOrder(service) {
   };
 }
 
-function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave }) {
+function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave, formOnly }) {
   const { useState, useEffect } = BFReact;
   const { Btn, Inp } = bfKit();
   const spec = BF_SERVICES[service];
@@ -656,7 +672,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   }, [createFor && createFor.id, service]);
   function closeForm() {
     setOpen(false);
-    if (createFor && onLeave && !selected) onLeave();
+    if ((createFor || formOnly) && onLeave && !selected) onLeave();
   }
   function leaveFiche() {
     setSelected(null);
@@ -666,12 +682,15 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   async function save() {
     try {
       setBusy(true);
-      const saved = await bfKit().api.saveService(spec.route, spec.payload(form));
+      const linked = await bfKit().ensureClient(dossierClient(form, spec.clientMode || 'person'), clients);
+      const next = linked && linked.client ? { ...form, client_id: linked.client.id } : form;
+      const saved = await bfKit().api.saveService(spec.route, spec.payload(next));
       setRows([saved, ...rows.filter((row) => row.id !== saved.id)]);
-      setSelected(saved);
       setOpen(false);
       setForm(spec.blank());
       notify('Dossier enregistré');
+      if (formOnly && onLeave) onLeave();
+      else setSelected(saved);
     } catch (error) {
       notify('⚠ ' + error.message);
     } finally {
@@ -708,6 +727,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     setForm(next);
     setOpen(true);
   }
+  useEffect(() => { if (formOnly) begin(); }, [formOnly, service]);
   function chooseAgency(value) {
     setAgency(value);
     if (onActiveAgenceChange) onActiveAgenceChange(value);
@@ -790,8 +810,8 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const listed = service === 'speculative_funds' ? rows.slice().sort(fundOrder) : rows.slice().sort(serviceOrder(service));
   return <div>
     {formPopup}
-    {service === 'speculative_funds' && <MarketBoard market={market} />}
-    <OfferBoard
+    {!formOnly && service === 'speculative_funds' && <MarketBoard market={market} />}
+    {!formOnly && <OfferBoard
       kicker={spec.kicker}
       title={spec.title}
       note={spec.note}
@@ -805,7 +825,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       onAgency={chooseAgency}
       onOpen={setSelected}
       empty="Aucun dossier dans cette catégorie"
-    />
+    />}
   </div>;
 }
 
@@ -1080,7 +1100,7 @@ const BF_SERVICES = {
 
 function LifeDesk(props) {
   const { useState, useEffect } = BFReact;
-  const { contracts, setContracts, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave } = props;
+  const { contracts, setContracts, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave, formOnly } = props;
   const { Btn, Inp, Select, Txt, fCur, fDate, InfoCard } = bfKit();
   const blank = { target_capital: 7500, civility: 'Monsieur', beneficiary_civility: 'Monsieur' };
   const [form, setForm] = useState(() => {
@@ -1126,9 +1146,16 @@ function LifeDesk(props) {
     setForm(next);
     setOpen(true);
   }, [createFor && createFor.id]);
+  useEffect(() => {
+    if (!formOnly) return;
+    const next = { ...blank, start_date: bfRpToday() };
+    if (activeAgence && activeAgence !== 'toutes') next.agency = activeAgence;
+    setForm(next);
+    setOpen(true);
+  }, [formOnly]);
   function closeContract() {
     setOpen(false);
-    if (createFor && onLeave && !selected) onLeave();
+    if ((createFor || formOnly) && onLeave && !selected) onLeave();
   }
   function leaveLife() {
     setSelected(null);
@@ -1138,11 +1165,20 @@ function LifeDesk(props) {
   async function save() {
     try {
       setBusy(true);
+      const subscriber = await bfKit().ensureClient({
+        id: form.subscriber_client_id, prenom: form.prenom, nom: form.nom, telegram: form.telegram,
+        adresse: form.address, civilite: form.civility, date_naissance: form.birth_date,
+        nationalite: form.nationality, profession: form.job, entreprise: form.company
+      }, clients);
+      const known = subscriber.created && subscriber.client ? [subscriber.client, ...(clients || [])] : clients;
+      const beneficiary = await bfKit().ensureClient({
+        id: form.beneficiary_client_id, prenom: form.beneficiary_first_name, nom: form.beneficiary_last_name, telegram: form.beneficiary_telegram
+      }, known);
       const saved = await bfKit().api.addLifeInsurance({
         agency: form.agency,
         target_capital: Number(form.target_capital),
         start_date: form.start_date,
-        subscriber_client_id: form.subscriber_client_id,
+        subscriber_client_id: subscriber.client ? subscriber.client.id : form.subscriber_client_id,
         subscriber_first_name: form.prenom,
         subscriber_last_name: form.nom,
         subscriber_telegram: form.telegram,
@@ -1175,9 +1211,10 @@ function LifeDesk(props) {
         }
       });
       setContracts([saved, ...contracts]);
-      setSelected(saved);
       setOpen(false);
       notify('Police enregistrée');
+      if (formOnly && onLeave) onLeave();
+      else setSelected(saved);
     } catch (error) {
       notify('⚠ ' + error.message);
     } finally {
@@ -1339,7 +1376,7 @@ function LifeDesk(props) {
         <Btn disabled={busy} onClick={save}>{busy ? 'Enregistrement…' : 'Créer la police'}</Btn>
       </div>
     </FormPopup>}
-    <OfferBoard
+    {!formOnly && <OfferBoard
       kicker="Protection et placement"
       title="Assurances-vie"
       action={<Btn onClick={openContract}>+ Nouveau contrat</Btn>}
@@ -1359,7 +1396,7 @@ function LifeDesk(props) {
       onAgency={(value) => { setAgency(value); if (onActiveAgenceChange) onActiveAgenceChange(value); }}
       onOpen={setSelected}
       empty="Aucune police dans cette catégorie"
-    />
+    />}
   </div>;
 }
 

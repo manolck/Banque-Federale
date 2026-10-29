@@ -1382,6 +1382,33 @@ function NotesPanel({client,focusSignal}){
 function personKey(value){
   return String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
 }
+async function ensureClient(person, clients){
+  const list=Array.isArray(clients)?clients:[];
+  const id=String(person?.id||'').trim();
+  if(id) return {client:list.find(c=>String(c.id)===id)||{id}, created:false};
+  const prenom=String(person?.prenom||'').trim();
+  const nom=String(person?.nom||'').trim();
+  if(!prenom||!nom) return {client:null, created:false};
+  const key=personKey(`${prenom} ${nom}`);
+  const swapped=personKey(`${nom} ${prenom}`);
+  const known=list.find(c=>{
+    const full=personKey(`${c.prenom||''} ${c.nom||''}`);
+    return full&&(full===key||full===swapped);
+  });
+  if(known) return {client:known, created:false};
+  const created=await api.addClient({
+    prenom, nom,
+    telegram:person.telegram||'',
+    adresse:person.adresse||'',
+    civilite:person.civilite||'',
+    date_naissance:person.date_naissance||'',
+    nationalite:person.nationalite||'',
+    profession:person.profession||'',
+    entreprise:person.entreprise||''
+  });
+  if(window.BVH&&typeof window.BVH.rememberClient==='function') window.BVH.rememberClient(created);
+  return {client:created, created:true};
+}
 function rowMatchesClient(client, row){
   const id=String(client?.id||'');
   const ids=[row?.client_id, row?.subscriber_client_id, row?.beneficiary_client_id].map(v=>String(v||''));
@@ -1535,7 +1562,9 @@ function LoanModal({open,onClose,onSave,loan,clients,prefill,defaultAgence='van_
     const activeRecovery=f.recouvrement_status&&f.recouvrement_status!=='aucun'&&f.recouvrement_status!=='cloture';
     try{
       setSaving(true);
-      await onSave({...loan,...f,loan_id:loan?.loan_id||'',bank_code:agenceCode(f.agence),agence:normalizeAgence(f.agence),somme:Number(f.somme),taux:Number(f.taux),total_a_rembourser:sched.total,echeances:sched.echeances,date_creation:loan?.date_creation||today(),recouvrement_started_at:activeRecovery?(f.recouvrement_started_at||new Date().toISOString()):f.recouvrement_started_at});
+      const linked=loan?{client:null}:await ensureClient({id:f.client_id,prenom:f.prenom,nom:f.nom,telegram:f.telegram}, clients);
+      const clientId=linked.client?linked.client.id:f.client_id;
+      await onSave({...loan,...f,client_id:clientId,loan_id:loan?.loan_id||'',bank_code:agenceCode(f.agence),agence:normalizeAgence(f.agence),somme:Number(f.somme),taux:Number(f.taux),total_a_rembourser:sched.total,echeances:sched.echeances,date_creation:loan?.date_creation||today(),recouvrement_started_at:activeRecovery?(f.recouvrement_started_at||new Date().toISOString()):f.recouvrement_started_at});
       onClose();
     }catch(e){
       setSaving(false);
@@ -2093,7 +2122,7 @@ function horseDiscord(f){
   ].join('\n');
 }
 
-function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceChange,focusId,createFor,onLeave}){
+function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceChange,focusId,createFor,onLeave,formOnly}){
   const empty={
     id:null,dossier_id:'',client_id:'',client_nom:'',client_prenom:'',telegram:'',adresse:'',profession:'',
     date_du_jour:isoToFr(today()),
@@ -2114,7 +2143,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
   useEffect(()=>{api.horseCredits().then(setCredits).catch(e=>notify('⚠ '+e.message))},[]);
   useEffect(()=>{if(!focusId)return;const target=(credits||[]).find(c=>String(c.id)===String(focusId));if(target)setView(target);},[focusId,credits]);
   useEffect(()=>{if(!createFor||!createFor.id)return;setF({...empty,client_id:createFor.id,client_nom:createFor.nom||'',client_prenom:createFor.prenom||'',telegram:createFor.telegram||'',adresse:createFor.adresse||'',date_du_jour:isoToFr(today())});setView(null);setFormOpen(true);},[createFor&&createFor.id]);
-  function cancelHorseForm(){setFormOpen(false);if(createFor&&onLeave&&!f.id)onLeave();}
+  function cancelHorseForm(){setFormOpen(false);if((createFor||formOnly)&&onLeave&&!f.id)onLeave();}
 
   function fromCredit(c){
     const acc=c.acceptations||{};
@@ -2141,18 +2170,24 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
 
   function resetForm(){setF(empty);setView(null);setFormOpen(false);}
   function openNew(){setF({...empty,date_du_jour:isoToFr(today())});setView(null);setFormOpen(true);}
+  useEffect(()=>{if(formOnly)openNew();},[formOnly]);
   function pick(id){const c=clients.find(x=>String(x.id)===String(id));setF({...f,client_id:id,client_nom:c?.nom||'',client_prenom:c?.prenom||'',telegram:c?.telegram||'',adresse:c?.adresse||''});}
 
   async function save(){
     try{
       setBusy(true);
       const payload=payloadFromForm();
+      if(!payload.id){
+        const linked=await ensureClient({id:f.client_id,prenom:f.client_prenom,nom:f.client_nom,telegram:f.telegram,adresse:f.adresse,profession:f.profession}, clients);
+        if(linked.client) payload.client_id=linked.client.id;
+      }
       const r=payload.id?await api.updateHorseCredit(payload):await api.addHorseCredit(payload);
       setCredits(payload.id?credits.map(x=>x.id===r.id?r:x):[r,...credits]);
-      setView(r);
       setF(fromCredit(r));
       setFormOpen(false);
       notify(payload.id?'Crédit hippique modifié':'Crédit hippique enregistré');
+      if(formOnly&&onLeave)onLeave();
+      else setView(r);
     }catch(e){notify('⚠ '+e.message)}
     finally{setBusy(false)}
   }
@@ -2270,7 +2305,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
           </div>
     </div></div>}
 
-    {focusId&&!view? <div className="vx-section"><p className="vx-lead">{credits.length?'Dossier introuvable.':'Ouverture du dossier…'}</p>{onLeave&&<button type="button" className="vx-btn quiet" onClick={onLeave}>Retour au client</button>}</div> : window.BF&&<window.BF.OfferBoard
+    {formOnly?null:focusId&&!view? <div className="vx-section"><p className="vx-lead">{credits.length?'Dossier introuvable.':'Ouverture du dossier…'}</p>{onLeave&&<button type="button" className="vx-btn quiet" onClick={onLeave}>Retour au client</button>}</div> : window.BF&&<window.BF.OfferBoard
       kicker="Hippodrome Howley & Co."
       title="Crédit de mise hippique"
       note="Le crédit hippique n'a pas d'échéancier. Les filtres suivent le statut du dossier."
@@ -2745,7 +2780,7 @@ function bump(bucket, key, patch){
   Object.entries(patch).forEach(([name,value])=>{slot[name]=(slot[name]||0)+Number(value||0);});
   bucket[key]=slot;
 }
-function serviceBoard(title, note, columns, rows, assign){
+function serviceBoard(title, note, columns, rows, assign, create){
   const banks={};
   const total={};
   SERVICE_BANKS.forEach(key=>{banks[key]={};});
@@ -2756,9 +2791,10 @@ function serviceBoard(title, note, columns, rows, assign){
     keys.forEach(key=>bump(banks, key, patch.values));
   });
   const extra=Object.keys(banks).filter(key=>key&&!SERVICE_BANKS.includes(key));
-  return {title, note, columns, banks, extra, total:total.all||{}};
+  return {title, note, columns, banks, extra, total:total.all||{}, create};
 }
-function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes'}){
+function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes',clients=[],notify,setLoans,setLifeInsurance,onRefresh}){
+  const[draft,setDraft]=useState(null);
   const funds=books.speculative_funds||[];
   const pawn=books.pawn_loans||[];
   const consigne=books.consigne_contracts||[];
@@ -2774,52 +2810,52 @@ function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence
       const paid=loanPaidNow(loan);
       const left=Math.max(Number(loan.total_a_rembourser||0)-paid,0);
       return {banks:[loanAgence(loan)], values:{dossiers:1, open:closed?0:1, late:late?1:0, lent:Number(loan.somme||0), paid, expected:Number(loan.total_a_rembourser||0), left}};
-    }),
+    }, 'loan'),
     serviceBoard('Fonds spéculatifs','Capital actuel des dossiers ouverts ou en pause.',[
       ['dossiers','Dossiers',false],['open','Ouverts',false],['pause','En pause',false],['capital','Capital',true]
-    ], funds, row=>({banks:serviceBankList(row), values:{dossiers:1, open:row.status==='ouvert'?1:0, pause:row.status==='pause'?1:0, capital:fundCapitalNow(row)}})),
+    ], funds, row=>({banks:serviceBankList(row), values:{dossiers:1, open:row.status==='ouvert'?1:0, pause:row.status==='pause'?1:0, capital:fundCapitalNow(row)}}), 'speculative_funds'),
     serviceBoard('Assurances-vie','Solde composé des contrats encore en cours.',[
       ['dossiers','Contrats',false],['open','En cours',false],['balance','Solde',true]
     ], lifeInsurance, row=>{
       const stopped=['closed','paid_to_beneficiary','cancelled'].includes(row.status);
       return {banks:serviceBankList(row), values:{dossiers:1, open:stopped?0:1, balance:lifeCapitalNow(row)}};
-    }),
+    }, 'life'),
     serviceBoard('Épargne à terme','Somme encore placée.',[
       ['dossiers','Dossiers',false],['open','En cours',false],['placed','Placé',true]
     ], term, row=>{
       const placed=termCapitalNow(row);
       return {banks:serviceBankList(row), values:{dossiers:1, open:placed>0?1:0, placed}};
-    }),
+    }, 'term_savings'),
     serviceBoard('Livret Goldstein','Somme restante sur les livrets.',[
       ['dossiers','Livrets',false],['open','Avec solde',false],['balance','Somme',true]
     ], goldstein, row=>{
       const balance=moneyNow(row.balance);
       return {banks:serviceBankList(row), values:{dossiers:1, open:balance>0?1:0, balance}};
-    }),
+    }, 'goldstein_booklets'),
     serviceBoard('Prêt sur gage','Montant prêté et somme encore due.',[
       ['dossiers','Dossiers',false],['open','Ouverts',false],['lent','Prêté',true],['due','À rembourser',true]
     ], pawn, row=>{
       const closed=offerClosed('pawn_loans', row);
       return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, lent:closed?0:moneyNow(row.amount), due:closed?0:moneyNow(row.amount_due||row.repayment)}};
-    }),
+    }, 'pawn_loans'),
     serviceBoard('Consignes','Valeur déposée et redevance hebdomadaire.',[
       ['dossiers','Contrats',false],['open','Ouverts',false],['stored','Déposé',true],['weekly','Par semaine',true]
     ], consigne, row=>{
       const closed=offerClosed('consigne_contracts', row);
       return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, stored:closed?0:moneyNow(row.stored_value), weekly:closed?0:moneyNow(row.weekly_total)}};
-    }),
+    }, 'consigne_contracts'),
     serviceBoard('Gestion de paie','Masse salariale des mandats ouverts.',[
       ['dossiers','Contrats',false],['open','Ouverts',false],['payroll','Masse',true]
     ], payroll, row=>{
       const closed=offerClosed('payroll_contracts', row);
       return {banks:serviceBankList(row), values:{dossiers:1, open:closed?0:1, payroll:closed?0:moneyNow(row.payroll)}};
-    }),
+    }, 'payroll_contracts'),
     serviceBoard('Crédit hippique','Mises des paris encore en cours.',[
       ['dossiers','Dossiers',false],['open','En cours',false],['stake','Mises',true]
     ], horses, row=>{
       const open=!['termine','refuse'].includes(row.statut);
       return {banks:serviceBankList(row), values:{dossiers:1, open:open?1:0, stake:open?moneyNow(row.montant_total):0}};
-    })
+    }, 'horse')
   ];
   const scopeLabel=activeAgence==='toutes'?'Toutes les banques':agenceLabel(activeAgence);
   const payrollShared=payroll.some(row=>{
@@ -2844,7 +2880,10 @@ function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence
         const slot=slotOf(board);
         const empty=!slot.dossiers;
         return <article className="vx-card" key={board.title}>
-          <h3>{board.title}</h3>
+          <header>
+            <h3>{board.title}</h3>
+            <button type="button" className="vx-btn primary" onClick={()=>setDraft(board.create)}>Nouveau</button>
+          </header>
           <p>{board.note}</p>
           {empty?<p className="vx-offer-empty">Aucun dossier.</p>:<div className="vx-offer-stats">
             {board.columns.map(column=><div key={column[0]}><b>{cell(column, slot)}</b><span>{column[1]}</span></div>)}
@@ -2853,6 +2892,10 @@ function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence
       })}
     </div>
     {payrollShared&&<p className="vx-lead">Un mandat de paie couvrant plusieurs banques est compté en entier pour la banque choisie, et une seule fois pour toutes les banques.</p>}
+    {draft==='loan'&&<LoanModal open onClose={()=>setDraft(null)} onSave={async loan=>{const saved=loan.id?await api.updateLoan(loan):await api.addLoan(loan);setLoans(loan.id?loans.map(item=>item.id===saved.id?saved:item):[saved,...loans]);notify(loan.id?'Prêt modifié':'Prêt créé');}} clients={clients} defaultAgence={activeAgence==='toutes'?'van_horn':activeAgence}/>}
+    {draft==='life'&&window.BF&&<window.BF.LifeDesk contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} formOnly onLeave={()=>{setDraft(null);onRefresh?.();}}/>}
+    {draft==='horse'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} formOnly onLeave={()=>{setDraft(null);onRefresh?.();}}/>}
+    {draft&&draft!=='loan'&&draft!=='life'&&draft!=='horse'&&window.BF&&<window.BF.ServiceDesk service={draft} clients={clients} notify={notify} activeAgence={activeAgence} formOnly onLeave={()=>{setDraft(null);onRefresh?.();}}/>}
   </div>;
 }
 function LifeInsurancePage(props){
@@ -2863,6 +2906,7 @@ function LifeInsurancePage(props){
 function App(){
   const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('clients'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
   const notify=m=>{setToast(m);setTimeout(()=>setToast(''),3000)};
+  window.BVH.rememberClient=client=>{if(!client||!client.id)return;setClients(current=>current.some(item=>String(item.id)===String(client.id))?current:[client,...current]);};
   async function loadAll(user){
     const booksKeys=['speculative_funds','pawn_loans','consigne_contracts','term_savings','payroll_contracts','goldstein_booklets'];
     const req=[api.loans(),api.clients(),api.agenda(),api.lifeInsurance(),api.horseCredits(),...booksKeys.map(key=>api.service(key))];
@@ -2978,14 +3022,14 @@ function App(){
     </header>
     <main className="vx-main">
       {refreshing&&<div className="vx-refresh">Actualisation…</div>}
-      {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence}/>}
+      {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence} clients={clients} notify={notify} setLoans={setLoans} setLifeInsurance={setLifeInsurance} onRefresh={()=>loadAll(me)}/>}
       {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>
   </div>
 }
 
-window.BVH={AGENCIES,api,fCur,fDate,Btn,Inp,Select,Txt,InfoCard,Badge,hasPermission};
+window.BVH={AGENCIES,api,fCur,fDate,Btn,Inp,Select,Txt,InfoCard,Badge,hasPermission,ensureClient};
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 </script>
 </body></html>
