@@ -282,14 +282,17 @@ const CAT_LABEL = {
   ouvert: 'Ouvert', pause: 'En pause', fonds_clos: 'Clôturé', en_cours: 'En cours', termine: 'Terminé', refuse: 'Refusé', ajour: 'À jour'
 };
 
+function bfRpToday() {
+  const now = new Date();
+  const shifted = new Date(1904, now.getMonth(), now.getDate());
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
+}
 function bfDaysDiff(iso) {
   const day = String(iso || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
-  const left = new Date(`${day}T00:00:00`);
-  const right = new Date();
-  left.setHours(0, 0, 0, 0);
-  right.setHours(0, 0, 0, 0);
-  return Math.floor((left - right) / 86400000);
+  const left = new Date(`${day}T12:00:00Z`);
+  const right = new Date(`${bfRpToday()}T12:00:00Z`);
+  return Math.round((left.getTime() - right.getTime()) / 86400000);
 }
 function dueState(date, closed) {
   if (closed) return 'cloture';
@@ -653,6 +656,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       if (spec.clientMode === 'company') next.agencies = [scope];
       else next.agency = scope;
     }
+    if (!next.signed_on) next.signed_on = bfRpToday();
     setForm(next);
     setOpen(true);
   }
@@ -1139,6 +1143,7 @@ function LifeDesk(props) {
   function openContract() {
     const next = { ...blank };
     if (agency && agency !== 'toutes') next.agency = agency;
+    next.start_date = bfRpToday();
     setForm(next);
     setOpen(true);
   }

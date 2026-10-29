@@ -4,7 +4,7 @@ function safeClientId(v){return require('./ids').safeId(v);}
 function normalize(b, actor){
   const coupons_count = Math.max(1, Number.parseInt(b.coupons_count || 1, 10));
   const montant_total = 25 * coupons_count;
-  const date = new Date().toISOString().slice(0,10).replaceAll('-','');
+  const date = require('./money').rpToday().replaceAll('-','');
   const dossier_id = b.dossier_id || `HIP-${date}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
   return {
     dossier_id,

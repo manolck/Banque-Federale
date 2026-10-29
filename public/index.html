@@ -1168,11 +1168,11 @@ function isoToFr(value){const iso=String(value||'').match(/^(\d{4})-(\d{2})-(\d{
 function frToIso(value){const fr=String(value||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!fr)return '';const day=Number(fr[1]),month=Number(fr[2]),year=Number(fr[3]);const date=new Date(Date.UTC(year,month-1,day));if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return '';return `${fr[3]}-${fr[2]}-${fr[1]}`;}
 function maskDate(value){const iso=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(iso)return `${iso[3]}/${iso[2]}/${iso[1]}`;const digits=String(value||'').replace(/\D/g,'').slice(0,8);if(digits.length<=2)return digits;if(digits.length<=4)return digits.slice(0,2)+'/'+digits.slice(2);return digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);}
 const fDate=d=>{if(!d)return '—';return isoToFr(d)||frToIso(d)&&String(d)||String(d).slice(0,10);};
-const today=()=>{const d=new Date();d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().split('T')[0];};
-const plusDays=(days)=>{const d=new Date();d.setDate(d.getDate()+days);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().split('T')[0];};
-const daysDiff=d=>{const a=new Date(d+'T00:00:00'),b=new Date();a.setHours(0,0,0,0);b.setHours(0,0,0,0);return Math.floor((a-b)/86400000);};
+const today=()=>{const d=new Date();const shifted=new Date(1904,d.getMonth(),d.getDate());return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
+const plusDays=(days)=>{const d=new Date();const shifted=new Date(1904,d.getMonth(),d.getDate()+Number(days||0));return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
+const daysDiff=d=>{const day=String(d||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return null;const left=new Date(day+'T12:00:00Z');const right=new Date(today()+'T12:00:00Z');return Math.round((left-right)/86400000);};
 const genId=()=>`VH-${today().replaceAll('-','')}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
-const date1904=()=>{const d=new Date();return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;};
+const date1904=()=>isoToFr(today());
 
 async function call(url,opts={}){
   const {headers:customHeaders={},...rest}=opts;
@@ -1595,7 +1595,7 @@ function AgendaStatus({status}){const s=AGENDA_STATUSES[status]||AGENDA_STATUSES
 
 function ClientAgendaPanel({client,appointments=[]}){
   const events=agendaEventsForClient(client,appointments).sort((a,b)=>agendaDateTime(a.appointment_date,a.start_time)-agendaDateTime(b.appointment_date,b.start_time));
-  const now=new Date();
+  const now=new Date(`${today()}T${localTimeNow()}:00`);
   const upcoming=events.filter(e=>agendaDateTime(e.end_date||e.appointment_date,e.end_time)>=now);
   return <div className="bvh-ledger">
     <div className="bvh-ledger-title">Rendez-vous du client</div>
@@ -1975,7 +1975,7 @@ function horseDiscord(f){
 function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceChange}){
   const empty={
     id:null,dossier_id:'',client_id:'',client_nom:'',client_prenom:'',telegram:'',adresse:'',profession:'',
-    date_du_jour:new Date().toLocaleDateString('fr-FR'),
+    date_du_jour:isoToFr(today()),
     identite_presentee:false,photographie_ajoutee:false,piece_identite_url:'',photographie_url:'',
     coupons_count:1,taux:0,date_course:'',cheval_ecurie:'',type_pari:'gagnant',type_pari_autre:'',
     bookmaker:'',numeros_coupons:'',coupons_enregistres:false,numeros_verifies:false,
@@ -2016,7 +2016,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
   }
 
   function resetForm(){setF(empty);setView(null);setFormOpen(false);}
-  function openNew(){setF({...empty,date_du_jour:new Date().toLocaleDateString('fr-FR')});setView(null);setFormOpen(true);}
+  function openNew(){setF({...empty,date_du_jour:isoToFr(today())});setView(null);setFormOpen(true);}
   function pick(id){const c=clients.find(x=>String(x.id)===String(id));setF({...f,client_id:id,client_nom:c?.nom||'',client_prenom:c?.prenom||'',telegram:c?.telegram||'',adresse:c?.adresse||''});}
 
   async function save(){
@@ -2258,10 +2258,8 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
   const maxPaid=Math.max(1,...agencyStats.map(b=>b.paid));
   const maxClosed=Math.max(1,...agencyStats.map(b=>b.closed));
 
-  const now=new Date();
   const days30=Array.from({length:8},(_,i)=>{
-    const d=new Date();d.setDate(d.getDate()-(7-i)*4);d.setHours(12,0,0,0);
-    const iso=d.toISOString().slice(0,10);
+    const iso=plusDays(-(7-i)*4);
     const amount=loans.reduce((sum,l)=>sum+(l.echeances||[]).filter(e=>e.statut==='paye'&&String(e.date||'')<=iso).reduce((a,e)=>a+Number(e.montant||0),0),0);
     return {iso,amount};
   });

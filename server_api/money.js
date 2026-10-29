@@ -80,10 +80,30 @@ function termPayout(row, kind) {
   return { kind: 'echeance', rate: Number(row && row.rate), fee: 0, net };
 }
 
+const RP_YEAR = 1904;
+
+function rpToday(now = new Date()) {
+  const shifted = new Date(RP_YEAR, now.getMonth(), now.getDate());
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
+}
+
+function rpPlusDays(days, now = new Date()) {
+  const shifted = new Date(RP_YEAR, now.getMonth(), now.getDate() + Number(days || 0));
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
+}
+
+function rpDaysDiff(iso, now = new Date()) {
+  const day = String(iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const left = new Date(`${day}T12:00:00Z`);
+  const right = new Date(`${rpToday(now)}T12:00:00Z`);
+  return Math.round((left.getTime() - right.getTime()) / 86400000);
+}
+
 function datedLike(sample) {
   const now = new Date();
   const year = String(sample || '').slice(0, 4);
-  const used = /^\d{4}$/.test(year) ? year : String(now.getFullYear());
+  const used = /^\d{4}$/.test(year) ? year : String(RP_YEAR);
   return `${used}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
@@ -227,7 +247,7 @@ function fundWithdrawalQuote(row, gross) {
 
 module.exports = {
   money, moneyFr, dateFr, addDays, validDate, payment, periodsForDays, buildSchedule,
-  TERM_RATES, termQuote, termPayout, datedLike, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
+  TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
   lifeFinancials, lifeAsOf,
   fundCapital, fundCostBasis, fundDepositQuote, fundWithdrawalQuote

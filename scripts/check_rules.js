@@ -34,6 +34,12 @@ assert.strictEqual(money.consigneWeekly('standard', 'rhodes'), 30);
 const pawn = money.pawnQuote(100, 15);
 assert.strictEqual(pawn.repayment, 115);
 assert.strictEqual(money.addDays('1904-10-26', 7), '1904-11-02');
+assert.strictEqual(money.rpToday(new Date(2026, 9, 29, 15, 30, 0)), '1904-10-29');
+assert.strictEqual(money.rpPlusDays(7, new Date(2026, 9, 29)), '1904-11-05');
+assert.strictEqual(money.rpDaysDiff('1904-10-27', new Date(2026, 9, 29)), -2);
+assert.strictEqual(money.rpDaysDiff('1904-10-29', new Date(2026, 9, 29)), 0);
+assert.strictEqual(money.rpDaysDiff('1904-11-05', new Date(2026, 9, 29)), 7);
+assert.strictEqual(money.datedLike('1904-06-26'), money.rpToday());
 
 const payroll = money.payrollQuote(10, 500, 5);
 assert.strictEqual(payroll.management, 50);

@@ -1,6 +1,6 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
 const { safeId } = require('./ids');
-const { buildSchedule, discordUrlOk, moneyFr, dateFr } = require('./money');
+const { buildSchedule, discordUrlOk, moneyFr, dateFr, rpToday } = require('./money');
 const { letterhead, rpStamp } = require('./discord_forms');
 
 function safeClientId(v){
@@ -240,7 +240,7 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       echeances:safeEcheances(b.echeances),
       banquier_id:actor.id,
       banquier_username:actor.username,
-      date_creation:b.date_creation || new Date().toISOString().split('T')[0],
+      date_creation:b.date_creation || rpToday(),
       discord_url:String(b.discord_url||'').trim(),
       discord_receipt:true,
       discord_posted_at:null

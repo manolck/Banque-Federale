@@ -4,7 +4,7 @@ const {
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
 } = require('./discord_forms');
-const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, termPayout, datedLike } = require('./money');
+const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, termPayout, datedLike, rpToday } = require('./money');
 const { safeId } = require('./ids');
 
 function agencyOf(value) {
@@ -206,8 +206,7 @@ async function goldstein(body) {
 }
 
 function localToday() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return rpToday();
 }
 
 function fundHistory(row) {
