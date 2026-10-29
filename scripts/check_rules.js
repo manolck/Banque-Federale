@@ -40,6 +40,16 @@ assert.strictEqual(money.rpDaysDiff('1904-10-27', new Date(2026, 9, 29)), -2);
 assert.strictEqual(money.rpDaysDiff('1904-10-29', new Date(2026, 9, 29)), 0);
 assert.strictEqual(money.rpDaysDiff('1904-11-05', new Date(2026, 9, 29)), 7);
 assert.strictEqual(money.datedLike('1904-06-26'), money.rpToday());
+assert.strictEqual(money.datedLike('2026-08-01'), money.rpToday());
+assert.strictEqual(money.dateFr('1904-10-29'), '29/10/1904');
+assert.strictEqual(money.dateFr('2026-10-30'), '30/10/1904');
+assert.strictEqual(money.dateFr('2027-10-30'), '30/10/1905');
+assert.strictEqual(money.dateFr('2025-10-29'), '29/10/1903');
+assert.strictEqual(money.dateFr('1905-06-01'), '01/06/1905');
+assert.strictEqual(money.rpToday(new Date(2027, 0, 15)), '1905-01-15');
+assert.strictEqual(money.rpPlusDays(7, new Date(2027, 9, 29)), '1905-11-05');
+assert.strictEqual(money.rpDaysDiff('2026-10-27', new Date(2026, 9, 29)), -2);
+assert.strictEqual(money.rpDaysDiff('2027-10-29', new Date(2026, 9, 29)), 365);
 
 const payroll = money.payrollQuote(10, 500, 5);
 assert.strictEqual(payroll.management, 50);
@@ -273,7 +283,7 @@ assert.notStrictEqual(board.fields[3].value, board.fields[5].value);
 assert.strictEqual(board.fields[6].name, 'Contexte marché');
 assert.strictEqual(board.fields[6].value, "2 semaines de hausse d'affilée avant ce tirage.");
 assert.ok(board.footer.text.includes('perte partielle ou totale'));
-assert.ok(board.footer.text.includes('30/10/2026 18:00'));
+assert.ok(board.footer.text.includes('30/10/1904 18:00'));
 const split = market.marketEmbed({
   on: '2026-10-30',
   results: { I: { final: 1 }, II: { final: -1 }, III: { final: 0 } },

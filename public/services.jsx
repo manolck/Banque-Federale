@@ -6,8 +6,15 @@ function bfMoney(value) {
   if (!Number.isFinite(number)) return 0;
   return Math.round((number + Number.EPSILON) * 100) / 100;
 }
+function bfRpIso(value) {
+  const iso = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return '';
+  const year = Number(iso[1]);
+  const used = year >= 2000 ? 1904 + (year - 2026) : iso[1];
+  return `${used}-${iso[2]}-${iso[3]}`;
+}
 function bfDate(value) {
-  const iso = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const iso = bfRpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || '');
 }
 function bfAddDays(iso, days) {
@@ -47,7 +54,7 @@ function fundWithdrawals(row) {
 }
 function latestMarketStatement(row) {
   const list = (Array.isArray(row && row.statements) ? row.statements : []).filter((item) => item && item.market && item.on);
-  list.sort((left, right) => String(left.on).localeCompare(String(right.on)));
+  list.sort((left, right) => bfRpIso(left.on).localeCompare(bfRpIso(right.on)));
   return list.length ? list[list.length - 1] : null;
 }
 function MarketBoard({ market }) {
@@ -78,7 +85,7 @@ function fundLines(statements, deposits, withdrawals) {
   return (Array.isArray(statements) ? statements : []).map((item) => ({ kind: 'statement', ...item }))
     .concat((Array.isArray(deposits) ? deposits : []).map((item) => ({ kind: 'deposit', ...item })))
     .concat(taken.map((item) => ({ kind: 'withdrawal', ...item })))
-    .sort((left, right) => String(left.on || '').localeCompare(String(right.on || '')));
+    .sort((left, right) => bfRpIso(left.on || '').localeCompare(bfRpIso(right.on || '')));
 }
 function fundTaxText(item) {
   if (item.tax == null || item.tax === '') return '—';
@@ -284,12 +291,12 @@ const CAT_LABEL = {
 
 function bfRpToday() {
   const now = new Date();
-  const shifted = new Date(1904, now.getMonth(), now.getDate());
+  const shifted = new Date(1904 + (now.getFullYear() - 2026), now.getMonth(), now.getDate());
   return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
 }
 function bfDaysDiff(iso) {
-  const day = String(iso || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const day = bfRpIso(iso);
+  if (!day) return null;
   const left = new Date(`${day}T12:00:00Z`);
   const right = new Date(`${bfRpToday()}T12:00:00Z`);
   return Math.round((left.getTime() - right.getTime()) / 86400000);
@@ -587,7 +594,7 @@ function serviceOrder(service) {
     if (rank) return rank;
     const leftDate = left.echeance_date || left.next_due || left.next_capitalization || '9999-12-31';
     const rightDate = right.echeance_date || right.next_due || right.next_capitalization || '9999-12-31';
-    const compared = String(leftDate).localeCompare(String(rightDate));
+    const compared = bfRpIso(leftDate).localeCompare(bfRpIso(rightDate));
     if (compared) return compared;
     return String(serviceSnapshot(service, left).ref).localeCompare(String(serviceSnapshot(service, right).ref), 'fr', { numeric: true });
   };
@@ -1247,7 +1254,7 @@ function LifeDesk(props) {
         if (rank) return rank;
         const leftNext = (left.payments || []).find((payment) => payment.status !== 'paid');
         const rightNext = (right.payments || []).find((payment) => payment.status !== 'paid');
-        return String(leftNext && leftNext.date || '9999-12-31').localeCompare(String(rightNext && rightNext.date || '9999-12-31'));
+        return bfRpIso(leftNext && leftNext.date || '9999-12-31').localeCompare(bfRpIso(rightNext && rightNext.date || '9999-12-31'));
       })}
       tabs={DUE_TABS}
       categoryOf={(row) => lifeSnapshot(row).category}

@@ -8,9 +8,15 @@ function moneyFr(value) {
   return `${money(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 }
 
+function rpIso(value) {
+  const match = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const used = rpCalendarYear(match[1]);
+  return `${used}-${match[2]}-${match[3]}`;
+}
+
 function dateFr(iso) {
-  const text = String(iso || '').slice(0, 10);
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const match = rpIso(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 }
 
@@ -81,30 +87,34 @@ function termPayout(row, kind) {
 }
 
 const RP_YEAR = 1904;
+const RP_ORIGIN = 2026;
+
+function rpCalendarYear(year) {
+  const value = Number(year);
+  if (!Number.isInteger(value) || value < 2000) return value;
+  return RP_YEAR + (value - RP_ORIGIN);
+}
 
 function rpToday(now = new Date()) {
-  const shifted = new Date(RP_YEAR, now.getMonth(), now.getDate());
+  const shifted = new Date(rpCalendarYear(now.getFullYear()), now.getMonth(), now.getDate());
   return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
 }
 
 function rpPlusDays(days, now = new Date()) {
-  const shifted = new Date(RP_YEAR, now.getMonth(), now.getDate() + Number(days || 0));
+  const shifted = new Date(rpCalendarYear(now.getFullYear()), now.getMonth(), now.getDate() + Number(days || 0));
   return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, '0')}-${String(shifted.getDate()).padStart(2, '0')}`;
 }
 
 function rpDaysDiff(iso, now = new Date()) {
-  const day = String(iso || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const day = rpIso(iso);
+  if (!day) return null;
   const left = new Date(`${day}T12:00:00Z`);
   const right = new Date(`${rpToday(now)}T12:00:00Z`);
   return Math.round((left.getTime() - right.getTime()) / 86400000);
 }
 
-function datedLike(sample) {
-  const now = new Date();
-  const year = String(sample || '').slice(0, 4);
-  const used = /^\d{4}$/.test(year) ? year : String(RP_YEAR);
-  return `${used}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+function datedLike() {
+  return rpToday();
 }
 
 function consigneWeekly(coverage, agency) {
@@ -246,7 +256,7 @@ function fundWithdrawalQuote(row, gross) {
 }
 
 module.exports = {
-  money, moneyFr, dateFr, addDays, validDate, payment, periodsForDays, buildSchedule,
+  money, moneyFr, dateFr, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
   TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
   lifeFinancials, lifeAsOf,

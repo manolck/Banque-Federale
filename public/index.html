@@ -1164,13 +1164,16 @@ const roleRank=u=>roleInfo(u).level;
 const hasPermission=(u,p)=>roleInfo(u).permissions.includes(p);
 const ROLE_OPTIONS=Object.entries(ROLE_DEFINITIONS).map(([code,info])=>({code,...info}));
 const fCur=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
-function isoToFr(value){const iso=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:'';}
+function rpYear(year){const value=Number(year);return value>=2000?1904+(value-2026):value;}
+function rpIso(value){const iso=String(value||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!iso)return '';return `${rpYear(iso[1])}-${iso[2]}-${iso[3]}`;}
+function isoToFr(value){const iso=rpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);return iso?`${iso[3]}/${iso[2]}/${iso[1]}`:'';}
 function frToIso(value){const fr=String(value||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/);if(!fr)return '';const day=Number(fr[1]),month=Number(fr[2]),year=Number(fr[3]);const date=new Date(Date.UTC(year,month-1,day));if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)return '';return `${fr[3]}-${fr[2]}-${fr[1]}`;}
 function maskDate(value){const iso=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);if(iso)return `${iso[3]}/${iso[2]}/${iso[1]}`;const digits=String(value||'').replace(/\D/g,'').slice(0,8);if(digits.length<=2)return digits;if(digits.length<=4)return digits.slice(0,2)+'/'+digits.slice(2);return digits.slice(0,2)+'/'+digits.slice(2,4)+'/'+digits.slice(4);}
 const fDate=d=>{if(!d)return '—';return isoToFr(d)||frToIso(d)&&String(d)||String(d).slice(0,10);};
-const today=()=>{const d=new Date();const shifted=new Date(1904,d.getMonth(),d.getDate());return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
-const plusDays=(days)=>{const d=new Date();const shifted=new Date(1904,d.getMonth(),d.getDate()+Number(days||0));return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
-const daysDiff=d=>{const day=String(d||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return null;const left=new Date(day+'T12:00:00Z');const right=new Date(today()+'T12:00:00Z');return Math.round((left-right)/86400000);};
+const today=()=>{const d=new Date();const shifted=new Date(rpYear(d.getFullYear()),d.getMonth(),d.getDate());return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
+const plusDays=(days)=>{const d=new Date();const shifted=new Date(rpYear(d.getFullYear()),d.getMonth(),d.getDate()+Number(days||0));return `${shifted.getFullYear()}-${String(shifted.getMonth()+1).padStart(2,'0')}-${String(shifted.getDate()).padStart(2,'0')}`;};
+const daysDiff=d=>{const day=rpIso(d);if(!day)return null;const left=new Date(day+'T12:00:00Z');const right=new Date(today()+'T12:00:00Z');return Math.round((left-right)/86400000);};
+function stamp1904(value){const date=value instanceof Date?value:new Date(value||'');if(Number.isNaN(date.getTime()))return '—';return date.toLocaleString('fr-FR').replace(/\b(20\d{2})\b/g,(_,year)=>String(rpYear(year)));}
 const genId=()=>`VH-${today().replaceAll('-','')}-${Math.random().toString(36).slice(2,7).toUpperCase()}`;
 const date1904=()=>isoToFr(today());
 
@@ -1373,7 +1376,7 @@ function NotesPanel({client,focusSignal}){
   useEffect(()=>{if(focusSignal)setTimeout(()=>document.getElementById(noteId)?.focus(),40)},[focusSignal]);
   async function add(){const note=text.trim();if(!note)return setErr('Écris une note avant d’ajouter.');try{setBusy(true);setErr('');const n=await api.addNote({client_id:client.id,note});setNotes([n,...notes]);setText('')}catch(e){setErr(e.message)}finally{setBusy(false)}}
   async function del(n){if(!confirm('Supprimer cette note ?'))return;try{await api.deleteNote(n.id);setNotes(notes.filter(x=>x.id!==n.id))}catch(e){setErr(e.message)}}
-  return <div className="bvh-ledger" id={`notes-client-${client.id}`}><div className="bvh-ledger-title" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>Notes internes</span><Btn color="#8b642c" disabled={busy} onClick={add}>{busy?'Ajout…':'Ajouter la note'}</Btn></div><div style={{padding:16}}><textarea id={noteId} value={text} onChange={e=>setText(e.target.value)} placeholder="Rédiger une note interne datée automatiquement…" rows={4} className="bvh-note-input" />{err&&<div style={{color:'#ffb0a6',marginTop:8}}>⚠ {err}</div>}<div style={{display:'grid',gap:10,marginTop:14}}>{notes.length===0?<div className="bvh-note-box">Aucune note interne pour ce dossier.</div>:notes.map(n=><div className="bvh-note-card" key={n.id}><div style={{display:'flex',justifyContent:'space-between',gap:10}}><b>{new Date(n.created_at).toLocaleString('fr-FR')}</b><button onClick={()=>del(n)} style={{background:'none',border:'none',color:'#ffb0a6',cursor:'pointer',fontWeight:900}}>Supprimer</button></div><p style={{whiteSpace:'pre-wrap',marginTop:8}}>{n.note}</p><small>Par {n.created_by_username||'—'}</small></div>)}</div></div></div>
+  return <div className="bvh-ledger" id={`notes-client-${client.id}`}><div className="bvh-ledger-title" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>Notes internes</span><Btn color="#8b642c" disabled={busy} onClick={add}>{busy?'Ajout…':'Ajouter la note'}</Btn></div><div style={{padding:16}}><textarea id={noteId} value={text} onChange={e=>setText(e.target.value)} placeholder="Rédiger une note interne datée automatiquement…" rows={4} className="bvh-note-input" />{err&&<div style={{color:'#ffb0a6',marginTop:8}}>⚠ {err}</div>}<div style={{display:'grid',gap:10,marginTop:14}}>{notes.length===0?<div className="bvh-note-box">Aucune note interne pour ce dossier.</div>:notes.map(n=><div className="bvh-note-card" key={n.id}><div style={{display:'flex',justifyContent:'space-between',gap:10}}><b>{stamp1904(n.created_at)}</b><button onClick={()=>del(n)} style={{background:'none',border:'none',color:'#ffb0a6',cursor:'pointer',fontWeight:900}}>Supprimer</button></div><p style={{whiteSpace:'pre-wrap',marginTop:8}}>{n.note}</p><small>Par {n.created_by_username||'—'}</small></div>)}</div></div></div>
 }
 
 function ClientDossier({client,loans,onBack,onEdit,onDelete,appointments=[],onQuickLoan,onQuickAppointment}){
@@ -1461,17 +1464,17 @@ function LoanDetail({loan,onBack,onUpdate,onDelete,notify,me}){
     <button onClick={onBack} style={{background:'none',border:'none',color:C.blue,cursor:'pointer',marginBottom:16}}>← Retour</button>
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}><div><h1>{loan.prenom} {loan.nom}</h1><div className="bvh-mini-badges"><AgencyBadge agence={loanAgence(loan)}/>{isLoanInRecouvrement(loan)&&<span className="bvh-mini-badge recouvrement">⚖️ {recouvrementLabel(loan.recouvrement_status)}</span>}</div></div><code style={{background:C.bord,padding:'5px 10px',borderRadius:6,color:C.blue}}>{loan.loan_id}</code></div>
     <div className="bvh-loan-detail-summary"><div><p>📱 {loan.telegram||'—'}</p><p>🏦 {loan.banquier_username||'—'}</p><p>Agence : <b>{agenceLabel(loan.agence)}</b></p><p>Garanties : {loan.garanties||'—'}</p></div><div><p>Somme : <b>{fCur(loan.somme)}</b></p><p>Total : <b>{fCur(loan.total_a_rembourser)}</b></p><p>Payé : <b style={{color:C.green}}>{fCur(paid)}</b></p><p>Restant : <b style={{color:C.gold}}>{fCur(remaining)}</b></p></div></div>
-    <div className="bvh-recovery-panel"><div className="bvh-recovery-head"><b>Suivi de recouvrement</b><RecoveryBadge status={recoveryStatus}/></div><div className="bvh-recovery-grid"><div><Select label="Statut" value={recoveryStatus} onChange={e=>setRecoveryStatus(e.target.value)}>{Object.entries(RECOUVREMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select>{loan.recouvrement_started_at&&<p className="bvh-recovery-note">Ouvert le {new Date(loan.recouvrement_started_at).toLocaleString('fr-FR')}</p>}</div><Txt label="Notes de recouvrement" value={recoveryNotes} onChange={e=>setRecoveryNotes(e.target.value)} placeholder="Relances, mise en demeure, saisie prévue, garantie concernée…"/><Btn color={recouvrementColor(recoveryStatus)} onClick={()=>saveRecovery(recoveryStatus)}>Enregistrer le suivi</Btn></div></div>
+    <div className="bvh-recovery-panel"><div className="bvh-recovery-head"><b>Suivi de recouvrement</b><RecoveryBadge status={recoveryStatus}/></div><div className="bvh-recovery-grid"><div><Select label="Statut" value={recoveryStatus} onChange={e=>setRecoveryStatus(e.target.value)}>{Object.entries(RECOUVREMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select>{loan.recouvrement_started_at&&<p className="bvh-recovery-note">Ouvert le {stamp1904(loan.recouvrement_started_at)}</p>}</div><Txt label="Notes de recouvrement" value={recoveryNotes} onChange={e=>setRecoveryNotes(e.target.value)} placeholder="Relances, mise en demeure, saisie prévue, garantie concernée…"/><Btn color={recouvrementColor(recoveryStatus)} onClick={()=>saveRecovery(recoveryStatus)}>Enregistrer le suivi</Btn></div></div>
     <div style={{display:'flex',gap:10,marginBottom:14,flexWrap:'wrap'}}><Btn onClick={()=>onUpdate({...loan,_edit:true})}>Modifier le prêt</Btn><Btn color="#8b642c" onClick={()=>{setRecoveryStatus('recouvrement_actif');setTimeout(()=>saveRecovery('recouvrement_actif'),0)}}>Passer en recouvrement</Btn><Btn color={C.red} onClick={()=>onDelete(loan)}>Supprimer le prêt</Btn></div>
     <div className="bvh-ledger"><div className="bvh-ledger-title">Échéances et rappels</div>
       {(loan.echeances||[]).map((e,i)=>{const last=latestReminder(e);return <div className="bvh-reminder-row" key={i}>
         <span className="bvh-reminder-number">#{i+1}</span><b>{fCur(e.montant)}</b><span>{fDate(e.date)}</span><Badge s={st(e)}/>
-        <div className="bvh-reminder-latest">{e.statut==='paye'?<span className="bvh-reminder-paid">Échéance remboursée</span>:<><b>{last?reminderSummary(last):'Aucun rappel envoyé'}</b>{last&&<small>Noté dans le registre le {new Date(last.created_at).toLocaleString('fr-FR')} · {reminderMethodLabel(last.reminder_method)}</small>}</>}</div>
+        <div className="bvh-reminder-latest">{e.statut==='paye'?<span className="bvh-reminder-paid">Échéance remboursée</span>:<><b>{last?reminderSummary(last):'Aucun rappel envoyé'}</b>{last&&<small>Noté dans le registre le {stamp1904(last.created_at)} · {reminderMethodLabel(last.reminder_method)}</small>}</>}</div>
         {e.statut==='paye'?<Btn color="#555" onClick={()=>mark(i,false)}>Annuler paiement</Btn>:<div className="bvh-reminder-actions"><Btn color="#8b642c" onClick={()=>setReminderTarget(i)}>{last?'Ajouter un rappel':'Noter un rappel'}</Btn><Btn color={C.green} onClick={()=>mark(i,true)}>Valider paiement</Btn></div>}
       </div>})}
     </div>
     <div className="bvh-ledger" style={{marginTop:14}}><div className="bvh-ledger-title">Historique des rappels</div>
-      {history.length===0?<p className="bvh-empty">Aucun rappel d’échéance n’a encore été noté pour ce prêt.</p>:history.map((r,index)=><div className="bvh-reminder-history" key={`${r.created_at||'rappel'}-${index}`}><div><b>Échéance n°{Number(r.echeance_index)+1}</b><span>{fDate(r.reminder_date)}{r.reminder_time?` à ${String(r.reminder_time).slice(0,5)}`:''} · {reminderMethodLabel(r.reminder_method)}</span></div><div><b>{r.recorded_by_username||'—'}</b><small>Noté le {new Date(r.created_at).toLocaleString('fr-FR')}</small></div>{r.note&&<p>{r.note}</p>}</div>)}
+      {history.length===0?<p className="bvh-empty">Aucun rappel d’échéance n’a encore été noté pour ce prêt.</p>:history.map((r,index)=><div className="bvh-reminder-history" key={`${r.created_at||'rappel'}-${index}`}><div><b>Échéance n°{Number(r.echeance_index)+1}</b><span>{fDate(r.reminder_date)}{r.reminder_time?` à ${String(r.reminder_time).slice(0,5)}`:''} · {reminderMethodLabel(r.reminder_method)}</span></div><div><b>{r.recorded_by_username||'—'}</b><small>Noté le {stamp1904(r.created_at)}</small></div>{r.note&&<p>{String(r.note).replace(/\b(20\d{2})(?=-\d{2}-\d{2}\b)/g,(_,year)=>String(rpYear(year)))}</p>}</div>)}
     </div>
     <ReminderModal open={reminderTarget!==null} loan={loan} echeanceIndex={reminderTarget} echeance={reminderTarget!==null?(loan.echeances||[])[reminderTarget]:null} onClose={()=>setReminderTarget(null)} onSaved={savedReminder} me={me}/>
   </div>
@@ -1485,7 +1488,7 @@ function LoansPage({loans,clients,setLoans,notify,onLoanDraftChange,openForClien
   useEffect(()=>()=>onLoanDraftChange?.(false),[]);
   useEffect(()=>{if(openForClient){onLoanDraftChange?.(true);setModal(true)}},[openForClient]);
 
-  function unpaid(l){return [...(l.echeances||[])].filter(e=>e.statut!=='paye').sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));}
+  function unpaid(l){return [...(l.echeances||[])].filter(e=>e.statut!=='paye').sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));}
   function loanCategory(l){
     if(isNeverReimbursed(l))return 'jamais_rembourse';
     if(isLoanRecouvrementCloture(l))return 'rembourses';
@@ -1508,7 +1511,7 @@ function LoansPage({loans,clients,setLoans,notify,onLoanDraftChange,openForClien
       const bLast=[...(b.echeances||[])].map(e=>e.date||'').sort().pop()||'';
       return bLast.localeCompare(aLast);
     }
-    return String(nextDue(a)?.date||'9999-12-31').localeCompare(String(nextDue(b)?.date||'9999-12-31'));
+    return rpIso(nextDue(a)?.date||'9999-12-31').localeCompare(rpIso(nextDue(b)?.date||'9999-12-31'));
   }
 
   const allLoans=[...(loans||[])].sort(sortLoans);
@@ -2204,7 +2207,7 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
 
   const paidAmountForLoan=l=>(l.echeances||[]).filter(e=>e.statut==='paye').reduce((sum,e)=>sum+Number(e.montant||0),0);
   const remainingForLoan=l=>Math.max(Number(l.total_a_rembourser||0)-paidAmountForLoan(l),0);
-  const unpaidForLoan=l=>(l.echeances||[]).filter(e=>e.statut!=='paye').sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const unpaidForLoan=l=>(l.echeances||[]).filter(e=>e.statut!=='paye').sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));
   const loanStatus=l=>{
     if(isNeverReimbursed(l))return 'jamais_rembourse';
     if(isLoanRecouvrementCloture(l))return 'clotures';
@@ -2281,7 +2284,7 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
       }
     });
   });
-  upcoming.sort((a,b)=>new Date(a.date)-new Date(b.date));
+  upcoming.sort((a,b)=>rpIso(a.date).localeCompare(rpIso(b.date)));
 
   const alerts=[
     ...upcoming.filter(e=>e.d<0).slice(0,3).map(e=>({icon:'⚠️',title:`${e.loan.prenom} ${e.loan.nom}`,sub:`Échéance du ${fDate(e.date)}`,tag:'Retard',color:'#b94735',right:`${Math.abs(e.d)} j`})),
@@ -2293,7 +2296,7 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
     const order={retards:0,recouvrement:1,aujourdhui:2,avenir:3,clotures:4,jamais_rembourse:5};
     const ak=loanStatus(a),bk=loanStatus(b);
     if(order[ak]!==order[bk])return order[ak]-order[bk];
-    return String(unpaidForLoan(a)[0]?.date||'9999-12-31').localeCompare(String(unpaidForLoan(b)[0]?.date||'9999-12-31'));
+    return rpIso(unpaidForLoan(a)[0]?.date||'9999-12-31').localeCompare(rpIso(unpaidForLoan(b)[0]?.date||'9999-12-31'));
   }).slice(0,6);
 
   function csvCell(value){
@@ -2340,7 +2343,7 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
     const ranking=[...agencyStats].sort((a,b)=>b.score-a.score);
     const lines=[
       'RAPPORT BANCAIRE — REGISTRE DE RECKLESS',
-      `Date : ${new Date().toLocaleString('fr-FR')}`,
+      `Date : ${stamp1904(new Date())}`,
       '',
       'SYNTHÈSE',
       `- Capital prêté : ${fCur(capitalPrete)}`,
@@ -2518,7 +2521,7 @@ function Dashboard({loans,clients,me,onMark,onLoanUpdate,appointments=[],onOpenA
   </div>
 }
 function InfoCard({icon,title,value,note}){return <div className="bvh-card"><div className="icon">{icon}</div><p>{title}</p><h2>{value}</h2><small style={{color:'#8f7547'}}>{note}</small></div>}
-function LogsPage({logs}){return <div><h1 style={{marginBottom:18}}>Logs</h1><div style={{display:'grid',gap:8}}>{logs.map(l=><div key={l.id} style={{background:C.card,border:'1px solid '+C.bord,borderRadius:10,padding:12}}><b>{new Date(l.created_at).toLocaleString('fr-FR')} — {l.username}</b><p style={{color:C.gold}}>{l.action}</p><pre style={{whiteSpace:'pre-wrap',color:C.muted,fontSize:12}}>{JSON.stringify(l.details||{},null,2)}</pre></div>)}</div></div>}
+function LogsPage({logs}){return <div><h1 style={{marginBottom:18}}>Logs</h1><div style={{display:'grid',gap:8}}>{logs.map(l=><div key={l.id} style={{background:C.card,border:'1px solid '+C.bord,borderRadius:10,padding:12}}><b>{stamp1904(l.created_at)} — {l.username}</b><p style={{color:C.gold}}>{l.action}</p><pre style={{whiteSpace:'pre-wrap',color:C.muted,fontSize:12}}>{JSON.stringify(l.details||{},null,2).replace(/\b(20\d{2})(?=-\d{2}-\d{2}\b)/g,(_,year)=>String(rpYear(year)))}</pre></div>)}</div></div>}
 
 
 const footerInfoPages={
@@ -2617,7 +2620,7 @@ function FooterInfoModal({active,onClose}){
 function SiteFooter({onOpen}){
   return <footer className="bvh-site-footer">
     <div className="bvh-footer-brand">
-      <span>© 2026</span>
+      <span>© 1904</span>
       <strong>Pandore Studio</strong>
       <span>·</span>
       <span>Banque Fédérale</span>
