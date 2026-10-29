@@ -2904,7 +2904,7 @@ function LifeInsurancePage(props){
 }
 
 function App(){
-  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('clients'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
+  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('dashboard'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
   const notify=m=>{setToast(m);setTimeout(()=>setToast(''),3000)};
   window.BVH.rememberClient=client=>{if(!client||!client.id)return;setClients(current=>current.some(item=>String(item.id)===String(client.id))?current:[client,...current]);};
   async function loadAll(user){
@@ -2965,7 +2965,7 @@ function App(){
   async function mark(loan,i,val){const es=[...(loan.echeances||[])];es[i]={...es[i],statut:val?'paye':'attente'};const allPaid=es.length>0&&es.every(e=>e.statut==='paye');const patch={id:loan.id,echeances:es};if(allPaid)patch.recouvrement_status='cloture';else if((loan.recouvrement_status||'')==='cloture')patch.recouvrement_status='aucun';try{const u=await api.updateLoan(patch);setLoans(loans.map(x=>x.id===u.id?u:x));notify(allPaid?'Paiement validé · prêt clôturé automatiquement':val?'Paiement validé':'Paiement annulé')}catch(e){notify('⚠ '+e.message)}}
   if(loading)return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>Chargement…</div>;
   if(!me)return <Login onLogin={onLogin}/>;
-  const menu=[['dashboard','','Vue banque'],['services','','Services'],['clients','','Clients'],['agenda','','Agenda']];
+  const menu=[['dashboard','','Banque'],['services','','Services'],['clients','','Clients'],['agenda','','Agenda']];
   if(canOpenDirection(me)) menu.push(['users','','Comptes'],['logs','','Journal']);
   async function refreshSharedData(){
     if(!me) return;
