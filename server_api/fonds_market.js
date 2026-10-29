@@ -121,19 +121,8 @@ function snapshot(etats) {
   return copy;
 }
 
-function projectionMoyenne(etats) {
-  const sum = { hausse: 0, baisse: 0, neutre: 0 };
-  for (const nom of PALIERS) {
-    const part = issueSemaine(nom, (etats && etats[nom]) || etatInitial());
-    sum.hausse += part.hausse;
-    sum.baisse += part.baisse;
-    sum.neutre += part.neutre;
-  }
-  return {
-    hausse: sum.hausse / PALIERS.length,
-    baisse: sum.baisse / PALIERS.length,
-    neutre: sum.neutre / PALIERS.length
-  };
+function projectionPalier(nom, etats) {
+  return issueSemaine(nom, (etats && etats[nom]) || etatInitial());
 }
 
 function partages(parts) {
@@ -179,11 +168,24 @@ function contexteTexte(avant) {
   }).join('\n');
 }
 
+function projectionField(nom, etats) {
+  const parts = projectionPalier(nom, etats);
+  const shown = partages(parts);
+  return {
+    name: `Projection · Palier ${nom}`,
+    inline: true,
+    value: [
+      projectionPhrase(parts.hausse, parts.baisse),
+      `Hausse : **${shown.hausse}%**`,
+      `Baisse : **${shown.baisse}%**`,
+      `Neutre : **${shown.neutre}%**`
+    ].join('\n')
+  };
+}
+
 function marketEmbed(week) {
   const board = week || {};
   const results = board.results || {};
-  const parts = projectionMoyenne(board.apres);
-  const shown = partages(parts);
   const when = dateFr(board.on);
   return {
     title: 'Haussmann Capital Partners',
@@ -200,15 +202,7 @@ function marketEmbed(week) {
         inline: true,
         value: `Résultat : **${dotPercent(final, 1)}**\nPlage : ${dotPercent(lo, 1)} à ${dotPercent(hi, 1)}`
       };
-    }).concat([
-      {
-        name: 'Projection semaine prochaine',
-        inline: false,
-        value: [
-          projectionPhrase(parts.hausse, parts.baisse),
-          `Hausse : **${shown.hausse}%** · Baisse : **${shown.baisse}%** · Neutre : **${shown.neutre}%**`
-        ].join('\n')
-      },
+    }).concat(PALIERS.map((nom) => projectionField(nom, board.apres)), [
       {
         name: 'Contexte marché',
         inline: false,

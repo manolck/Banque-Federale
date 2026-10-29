@@ -101,9 +101,28 @@ async function postNotice(client, item) {
   await api('POST', { kind: 'notice', collection: item.collection, id: item.id, notice_id: item.notice_id, message_id: message.id });
 }
 
+function marketCard(embed) {
+  if (!embed || typeof embed !== 'object') return null;
+  const title = embed.title ? String(embed.title).slice(0, 256) : '';
+  const description = embed.description ? String(embed.description).slice(0, 4096) : '';
+  if (!title && !description) return null;
+  const out = { color: Number.isInteger(embed.color) ? embed.color : 0x1f8b4c };
+  if (title) out.title = title;
+  if (description) out.description = description;
+  if (Array.isArray(embed.fields) && embed.fields.length) {
+    out.fields = embed.fields.slice(0, 25).map((field) => ({
+      name: String((field && field.name) || '—').slice(0, 256),
+      value: String((field && field.value) || '—').slice(0, 1024),
+      inline: Boolean(field && field.inline)
+    }));
+  }
+  if (embed.footer && embed.footer.text) out.footer = { text: String(embed.footer.text).slice(0, 2048) };
+  return out;
+}
+
 async function postMarket(client, item) {
   const channel = await client.channels.fetch(item.channel_id);
-  const embed = richEmbed(item.embed);
+  const embed = marketCard(item.embed);
   const message = await channel.send(embed ? { embeds: [embed] } : { content: 'Haussmann Capital Partners' });
   await api('POST', { kind: 'market', week: item.week, palier: item.palier, message_id: message.id });
 }

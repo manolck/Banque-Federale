@@ -250,7 +250,7 @@ assert.strictEqual(board.color, 0x1f8b4c);
 assert.ok(!board.author);
 assert.ok(board.description.includes('Haussmann Asset Management'));
 assert.ok(board.description.includes('selon son palier'));
-assert.strictEqual(board.fields.length, 5);
+assert.strictEqual(board.fields.length, 7);
 assert.strictEqual(board.fields[0].name, 'Palier I');
 assert.strictEqual(board.fields[0].inline, true);
 assert.ok(board.fields[0].value.includes('**-3.0%**'));
@@ -259,12 +259,19 @@ assert.ok(board.fields[1].value.includes('**-5.0%**'));
 assert.ok(board.fields[1].value.includes('-5.0% à +15.0%'));
 assert.ok(board.fields[2].value.includes('**-9.5%**'));
 assert.ok(board.fields[2].value.includes('-15.0% à +30.0%'));
-assert.strictEqual(board.fields[3].name, 'Projection semaine prochaine');
-const shares = board.fields[3].value.match(/Hausse : \*\*(\d+\.\d+)%\*\* · Baisse : \*\*(\d+\.\d+)%\*\* · Neutre : \*\*(\d+\.\d+)%\*\*/);
-assert.ok(shares);
-assert.ok(Math.abs(Number(shares[1]) + Number(shares[2]) + Number(shares[3]) - 100) < 0.011);
-assert.strictEqual(board.fields[4].name, 'Contexte marché');
-assert.strictEqual(board.fields[4].value, "2 semaines de hausse d'affilée avant ce tirage.");
+engine.PALIERS.forEach((nom, index) => {
+  const field = board.fields[3 + index];
+  const issue = engine.issueSemaine(nom, engine.etatInitial());
+  assert.strictEqual(field.name, `Projection · Palier ${nom}`);
+  assert.strictEqual(field.inline, true);
+  const shares = field.value.match(/Hausse : \*\*(\d+\.\d+)%\*\*\nBaisse : \*\*(\d+\.\d+)%\*\*\nNeutre : \*\*(\d+\.\d+)%\*\*/);
+  assert.ok(shares);
+  assert.ok(Math.abs(Number(shares[1]) + Number(shares[2]) + Number(shares[3]) - 100) < 0.011);
+  assert.ok(Math.abs(Number(shares[1]) - issue.hausse * 100) < 0.02);
+});
+assert.notStrictEqual(board.fields[3].value, board.fields[5].value);
+assert.strictEqual(board.fields[6].name, 'Contexte marché');
+assert.strictEqual(board.fields[6].value, "2 semaines de hausse d'affilée avant ce tirage.");
 assert.ok(board.footer.text.includes('perte partielle ou totale'));
 assert.ok(board.footer.text.includes('30/10/2026 18:00'));
 const split = market.marketEmbed({
@@ -273,9 +280,9 @@ const split = market.marketEmbed({
   avant: { I: { serie: 2 }, II: { serie: -1 }, III: { serie: 0 } },
   apres: sameStreak
 });
-assert.ok(split.fields[4].value.includes("Palier I : 2 semaines de hausse d'affilée avant ce tirage."));
-assert.ok(split.fields[4].value.includes('Palier II : 1 semaine de baisse avant ce tirage.'));
-assert.ok(split.fields[4].value.includes('Palier III : aucune série en cours avant ce tirage.'));
+assert.ok(split.fields[6].value.includes("Palier I : 2 semaines de hausse d'affilée avant ce tirage."));
+assert.ok(split.fields[6].value.includes('Palier II : 1 semaine de baisse avant ce tirage.'));
+assert.ok(split.fields[6].value.includes('Palier III : aucune série en cours avant ce tirage.'));
 assert.ok(split.fields[2].value.includes('**0.0%**'));
 
 console.log('Règles Banque Fédérale : calculs conformes.');
