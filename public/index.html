@@ -1206,6 +1206,7 @@ const api={
  loans:()=>call('/api/loans?actualisation='+Date.now()), addLoan:l=>call('/api/loans',{method:'POST',body:JSON.stringify(l)}), updateLoan:l=>call('/api/loans',{method:'PUT',body:JSON.stringify(l)}), deleteLoan:id=>call('/api/loans',{method:'DELETE',body:JSON.stringify({id})}), logs:()=>call('/api/logs'),
  lifeInsurance:()=>call('/api/life_insurance?actualisation='+Date.now()), addLifeInsurance:c=>call('/api/life_insurance',{method:'POST',body:JSON.stringify(c)}), updateLifeInsurance:c=>call('/api/life_insurance',{method:'PUT',body:JSON.stringify(c)}), deleteLifeInsurance:d=>call('/api/life_insurance',{method:'DELETE',body:JSON.stringify(d)}),
  documents:client_id=>call('/api/client_documents?client_id='+encodeURIComponent(client_id)), uploadDocument:d=>call('/api/client_documents',{method:'POST',body:JSON.stringify(d)}), deleteDocument:id=>call('/api/client_documents',{method:'DELETE',body:JSON.stringify({id})}), notes:client_id=>call('/api/client_notes?client_id='+encodeURIComponent(client_id)), addNote:d=>call('/api/client_notes',{method:'POST',body:JSON.stringify(d)}), deleteNote:id=>call('/api/client_notes',{method:'DELETE',body:JSON.stringify({id})}), agenda:(from,to)=>call('/api/agenda?actualisation='+Date.now()+(from&&to?`&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`:'')), addAgenda:a=>call('/api/agenda',{method:'POST',body:JSON.stringify(a)}), updateAgenda:a=>call('/api/agenda',{method:'PUT',body:JSON.stringify(a)}), deleteAgenda:id=>call('/api/agenda',{method:'DELETE',body:JSON.stringify({id})}), horseCredits:()=>call('/api/horse_credits'), addHorseCredit:h=>call('/api/horse_credits',{method:'POST',body:JSON.stringify(h)}), updateHorseCredit:h=>call('/api/horse_credits',{method:'PUT',body:JSON.stringify(h)}), deleteHorseCredit:id=>call('/api/horse_credits',{method:'DELETE',body:JSON.stringify({id})}),
+ agentSalaries:()=>call('/api/agent_salaries?actualisation='+Date.now()), saveAgentSalary:(body,method='POST')=>call('/api/agent_salaries',{method,body:JSON.stringify(body)}),
  service:name=>call('/api/'+name+'?actualisation='+Date.now()), saveService:(name,body,method='POST')=>call('/api/'+name,{method,body:JSON.stringify(body)})
 };
 function payment(capital,rate,n){capital=Number(capital);rate=Number(rate)/100;n=parseInt(n);if(!capital||!n)return 0;if(!rate)return capital/n;return capital*rate/(1-Math.pow(1+rate,-n));}
@@ -2792,6 +2793,133 @@ function serviceBoard(title, note, columns, rows, assign, create){
   const extra=Object.keys(banks).filter(key=>key&&!SERVICE_BANKS.includes(key));
   return {title, note, columns, banks, extra, total:total.all||{}, create};
 }
+function copyText(text){
+  const value=String(text==null?'':text);
+  if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(value);
+  return new Promise((resolve,reject)=>{
+    try{
+      const area=document.createElement('textarea');
+      area.value=value;area.setAttribute('readonly','');area.style.position='fixed';area.style.opacity='0';
+      document.body.appendChild(area);area.select();
+      const ok=document.execCommand('copy');
+      document.body.removeChild(area);
+      ok?resolve():reject(new Error('copie impossible'));
+    }catch(e){reject(e)}
+  });
+}
+const salaryPlain=n=>{const v=Number(n)||0;return Number.isInteger(v)?String(v):v.toFixed(2)};
+const BLANK_AGENT={agent_number:'',last_name:'',first_name:'',role_label:'',bank_account:'',salary:''};
+function SalaryForm({agent,onClose,onSaved,notify}){
+  const[f,setF]=useState(agent?{agent_number:agent.agent_number||'',last_name:agent.last_name||'',first_name:agent.first_name||'',role_label:agent.role_label||'',bank_account:agent.bank_account||'',salary:agent.salary??''}:BLANK_AGENT);
+  const[busy,setBusy]=useState(false),[err,setErr]=useState('');
+  const set=k=>e=>setF({...f,[k]:e.target.value});
+  async function save(){
+    setBusy(true);setErr('');
+    try{
+      const saved=agent?await api.saveAgentSalary({...f,id:agent.id},'PUT'):await api.saveAgentSalary(f);
+      onSaved(saved,!!agent);
+      notify(agent?'Agent modifié':'Agent ajouté');
+      onClose();
+    }catch(e){setErr(e.message||'Enregistrement impossible.')}
+    finally{setBusy(false)}
+  }
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+    <div className="bvh-card" style={{width:560,maxWidth:'100%',maxHeight:'92vh',overflow:'auto'}}>
+      <h2 style={{marginBottom:14}}>{agent?'Modifier l’agent':'Nouvel agent'}</h2>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+        <Inp label="Nom" value={f.last_name} onChange={set('last_name')}/>
+        <Inp label="Prénom" value={f.first_name} onChange={set('first_name')}/>
+        <Inp label="N° d’identification" value={f.agent_number} onChange={set('agent_number')}/>
+        <Inp label="Fonction (facultatif)" value={f.role_label} onChange={set('role_label')} placeholder="Deputy Junior"/>
+        <Inp label="Compte bancaire" value={f.bank_account} onChange={set('bank_account')} inputMode="numeric"/>
+        <Inp label="Salaire ($)" type="number" min="0" step="0.01" value={f.salary} onChange={set('salary')}/>
+      </div>
+      {err&&<div style={{color:'#ffb0a6',marginTop:12}}>⚠ {err}</div>}
+      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:18}}>
+        <button type="button" className="vx-btn quiet" onClick={onClose}>Annuler</button>
+        <button type="button" className="vx-btn primary" disabled={busy} onClick={save}>{busy?'Enregistrement…':'Enregistrer'}</button>
+      </div>
+    </div>
+  </div>;
+}
+function SalaryPage({notify}){
+  const[rows,setRows]=useState(null),[err,setErr]=useState(''),[form,setForm]=useState(null),[query,setQuery]=useState(''),[menuId,setMenuId]=useState(null);
+  async function load(){
+    try{const data=await api.agentSalaries();setRows(Array.isArray(data)?data:[]);setErr('')}
+    catch(e){setErr(e.message||'Chargement impossible.');setRows([])}
+  }
+  useEffect(()=>{load()},[]);
+  useEffect(()=>{
+    if(menuId==null)return;
+    const close=()=>setMenuId(null);
+    document.addEventListener('click',close);
+    return()=>document.removeEventListener('click',close);
+  },[menuId]);
+  function copy(label,text){
+    copyText(text).then(()=>notify(label+' copié : '+text)).catch(()=>notify('Copie impossible, sélectionne le texte à la main.'));
+  }
+  function applySaved(saved,isEdit){
+    setRows(list=>isEdit?list.map(x=>x.id===saved.id?saved:x):[...(list||[]),saved]);
+  }
+  async function toggle(row){
+    try{
+      const saved=await api.saveAgentSalary({id:row.id,action:row.paid?'mark_unpaid':'mark_paid'},'PUT');
+      applySaved(saved,true);
+    }catch(e){notify(e.message||'Action impossible.')}
+  }
+  async function remove(row){
+    if(!window.confirm('Retirer '+row.last_name+' '+row.first_name+' de la liste ?'))return;
+    try{await api.saveAgentSalary({id:row.id},'DELETE');setRows(list=>list.filter(x=>x.id!==row.id));notify('Agent retiré')}
+    catch(e){notify(e.message||'Suppression impossible.')}
+  }
+  async function resetAll(){
+    const paid=(rows||[]).filter(r=>r.paid);
+    if(!paid.length||!window.confirm('Remettre tous les agents à « À payer » pour la nouvelle période ?'))return;
+    try{
+      const saved=await Promise.all(paid.map(r=>api.saveAgentSalary({id:r.id,action:'mark_unpaid'},'PUT')));
+      setRows(list=>list.map(x=>saved.find(y=>y.id===x.id)||x));
+      notify('Période réinitialisée');
+    }catch(e){notify(e.message||'Action impossible.')}
+  }
+  const q=query.trim().toLowerCase();
+  const list=(rows||[]).filter(r=>!q||[r.last_name,r.first_name,r.agent_number,r.role_label,r.bank_account].join(' ').toLowerCase().includes(q));
+  const total=(rows||[]).reduce((n,r)=>n+Number(r.salary||0),0);
+  const left=(rows||[]).filter(r=>!r.paid).reduce((n,r)=>n+Number(r.salary||0),0);
+  return <div className="vx-home">
+    <div className="bvh-topbar">
+      <div><small>Direction · accès restreint</small><h1>Salaire agents</h1><p style={{color:'#d8bc78',marginTop:4}}>Clique sur un compte bancaire ou un salaire pour le copier.</p></div>
+      <div className="vx-hero-actions">
+        <button type="button" className="vx-btn quiet" onClick={resetAll}>Nouvelle période</button>
+        <button type="button" className="vx-btn primary" onClick={()=>setForm({})}>+ Nouvel agent</button>
+      </div>
+    </div>
+    <div className="vx-card vx-summary">
+      <div><b>{(rows||[]).length}</b><span>Agents</span></div>
+      <div><b>{fCur(total)}</b><span>Masse salariale</span></div>
+      <div><b>{fCur(left)}</b><span>Reste à payer</span></div>
+      <div><b>{(rows||[]).filter(r=>!r.paid).length}</b><span>À payer</span></div>
+    </div>
+    <Inp placeholder="Nom, n° d’identification, compte…" value={query} onChange={e=>setQuery(e.target.value)} style={{margin:'18px 0',maxWidth:520}}/>
+    {err&&<p className="vx-lead" style={{color:'#ffb0a6'}}>⚠ {err}</p>}
+    {rows===null?<p className="vx-lead">Chargement…</p>:list.length===0?<p className="vx-lead">{(rows||[]).length?'Aucun agent pour cette recherche.':'Aucun agent enregistré.'}</p>:<div className="sal-list">
+      {list.map(r=><div className="sal-row" key={r.id}>
+        <div className="sal-main">
+          <span className="sal-chip" title="Numéro d’identification">🪪 {r.agent_number}</span>
+          <div className="sal-name"><b>{r.last_name} {r.first_name}</b>{r.role_label&&<small>{r.role_label}</small>}</div>
+          <button type="button" className="sal-chip sal-copy" title="Copier le compte bancaire" onClick={()=>copy('Compte',r.bank_account)}>🏛️ {r.bank_account}</button>
+          <button type="button" className="sal-chip sal-copy sal-money" title="Copier le salaire" onClick={()=>copy('Salaire',salaryPlain(r.salary))}>💰 {fCur(r.salary)}</button>
+          <span className={'sal-state '+(r.paid?'paid':'due')}>{r.paid?'Payé':'À payer'}</span>
+          <button type="button" className={'sal-pay '+(r.paid?'undo':'')} onClick={()=>toggle(r)}>{r.paid?'Annuler':'Marquer payé'}</button>
+        </div>
+        <div className="sal-actions" onClick={e=>e.stopPropagation()}>
+          <button type="button" className="sal-link" onClick={()=>setMenuId(menuId===r.id?null:r.id)}>Actions ▾</button>
+          {menuId===r.id&&<div className="sal-menu"><button type="button" onClick={()=>{setMenuId(null);setForm(r)}}>Modifier</button><button type="button" className="danger" onClick={()=>{setMenuId(null);remove(r)}}>Retirer</button></div>}
+        </div>
+      </div>)}
+    </div>}
+    {form&&<SalaryForm agent={form.id?form:null} onClose={()=>setForm(null)} onSaved={applySaved} notify={notify}/>}
+  </div>;
+}
 const SERVICE_PAGES={loan:'prets',life:'assurances',horse:'hippique',speculative_funds:'fonds',pawn_loans:'gage',consigne_contracts:'consigne',term_savings:'terme',payroll_contracts:'paie',goldstein_booklets:'goldstein'};
 const SERVICE_PAGE_LIST=Object.values(SERVICE_PAGES);
 function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes',clients=[],notify,setLoans,setLifeInsurance,onRefresh,onOpenPage}){
@@ -2968,7 +3096,7 @@ function App(){
   if(loading)return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>Chargement…</div>;
   if(!me)return <Login onLogin={onLogin}/>;
   const menu=[['dashboard','','Banque'],['services','','Services'],['clients','','Clients'],['agenda','','Agenda']];
-  if(canOpenDirection(me)) menu.push(['users','','Comptes'],['logs','','Journal']);
+  if(canOpenDirection(me)) menu.push(['salaires','','Salaire agents'],['users','','Comptes'],['logs','','Journal']);
   async function refreshSharedData(){
     if(!me) return;
     setRefreshing(true);
@@ -3026,7 +3154,7 @@ function App(){
       {refreshing&&<div className="vx-refresh">Actualisation…</div>}
       {SERVICE_PAGE_LIST.includes(page)&&<button type="button" className="vx-btn quiet vx-back" onClick={()=>choosePage('services')}>← Retour aux services</button>}
       {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence} clients={clients} notify={notify} setLoans={setLoans} setLifeInsurance={setLifeInsurance} onRefresh={()=>loadAll(me)} onOpenPage={choosePage}/>}
-      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
+      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='salaires'&&canOpenDirection(me)&&<SalaryPage notify={notify}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>
   </div>

@@ -20,6 +20,7 @@
     "pret_consigne_contracts",
     "pret_term_savings",
     "pret_payroll_contracts",
-    "pret_goldstein_booklets"
+    "pret_goldstein_booklets",
+    "pret_agent_salaries"
   ]
 }

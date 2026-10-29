@@ -1,0 +1,25 @@
+{
+  "note": "Chaque collection garde les lignes dans un champ JSON row. Les règles vides sont refusées : seul le compte admin utilisé par le process Node lit et écrit.",
+  "collections": [
+    "pret_users",
+    "pret_logs",
+    "pret_clients",
+    "pret_client_notes",
+    "pret_client_documents",
+    "pret_loans",
+    "pret_life_insurance_contracts",
+    "pret_life_insurance_events",
+    "pret_horse_credits",
+    "pret_agenda_events",
+    "pret_telegram_contacts",
+    "pret_bank_settings",
+    "pret_storage",
+    "pret_service_events",
+    "pret_speculative_funds",
+    "pret_pawn_loans",
+    "pret_consigne_contracts",
+    "pret_term_savings",
+    "pret_payroll_contracts",
+    "pret_goldstein_booklets"
+  ]
+}

@@ -318,3 +318,38 @@
     .vx-grid, .vx-grid-2, .vx-row, .vx-offer-grid { grid-template-columns: 1fr; }
     .vx-main { width: calc(100% - 24px); }
   }
+  
+  /* ---------- Salaire agents ---------- */
+  .sal-list { display: grid; gap: 14px; }
+  .sal-row { background: var(--vx-card); border: 1px solid var(--vx-line); border-radius: 10px; padding: 18px 20px 12px; position: relative; }
+  .sal-main { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .sal-name { flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .sal-name b { color: #fff; font-size: 16px; }
+  .sal-name small { color: var(--vx-muted); font-size: 13px; }
+  .sal-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    background: #15100b; color: #fff; border: 1px solid var(--vx-line); border-radius: 6px;
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .sal-copy { cursor: pointer; }
+  .sal-copy:hover { border-color: var(--vx-gold-btn); background: #1d150d; }
+  .sal-copy:active { transform: scale(.97); }
+  .sal-money { color: var(--vx-gold-2); }
+  .sal-state { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+  .sal-state.due { background: rgba(214, 169, 90, .16); color: var(--vx-gold); }
+  .sal-state.paid { background: var(--vx-green-bg); color: var(--vx-green); }
+  .sal-pay {
+    border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 700; font-size: 13px;
+    background: #4cbb6c; color: #0d1a10;
+  }
+  .sal-pay.undo { background: #15100b; color: var(--vx-muted); border: 1px solid var(--vx-line); }
+  .sal-actions { position: relative; margin-top: 8px; }
+  .sal-link { background: none; border: 0; padding: 0; cursor: pointer; color: var(--vx-gold); font-size: 13px; text-decoration: underline dotted; }
+  .sal-menu {
+    position: absolute; left: 0; top: 24px; z-index: 20; min-width: 150px; display: grid;
+    background: #15100b; border: 1px solid var(--vx-line); border-radius: 8px; overflow: hidden; box-shadow: 0 12px 30px #000a;
+  }
+  .sal-menu button { background: none; border: 0; text-align: left; padding: 10px 14px; color: var(--vx-text); cursor: pointer; font-size: 13px; }
+  .sal-menu button:hover { background: rgba(214, 169, 90, .12); }
+  .sal-menu button.danger { color: var(--vx-red); }
+  @media (max-width: 700px) { .sal-main { gap: 10px; } .sal-name { flex-basis: 100%; order: -1; } }
