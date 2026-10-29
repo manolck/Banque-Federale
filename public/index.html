@@ -2792,7 +2792,9 @@ function serviceBoard(title, note, columns, rows, assign, create){
   const extra=Object.keys(banks).filter(key=>key&&!SERVICE_BANKS.includes(key));
   return {title, note, columns, banks, extra, total:total.all||{}, create};
 }
-function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes',clients=[],notify,setLoans,setLifeInsurance,onRefresh}){
+const SERVICE_PAGES={loan:'prets',life:'assurances',horse:'hippique',speculative_funds:'fonds',pawn_loans:'gage',consigne_contracts:'consigne',term_savings:'terme',payroll_contracts:'paie',goldstein_booklets:'goldstein'};
+const SERVICE_PAGE_LIST=Object.values(SERVICE_PAGES);
+function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence='toutes',clients=[],notify,setLoans,setLifeInsurance,onRefresh,onOpenPage}){
   const[draft,setDraft]=useState(null);
   const funds=books.speculative_funds||[];
   const pawn=books.pawn_loans||[];
@@ -2879,7 +2881,10 @@ function ServicesPage({loans=[],lifeInsurance=[],books={},horses=[],activeAgence
         return <article className="vx-card" key={board.title}>
           <header>
             <h3>{board.title}</h3>
-            <button type="button" className="vx-btn primary" onClick={()=>setDraft(board.create)}>Nouveau</button>
+            <div className="vx-card-actions">
+              {SERVICE_PAGES[board.create]&&onOpenPage&&<button type="button" className="vx-btn quiet" onClick={()=>onOpenPage(SERVICE_PAGES[board.create])}>Voir tout</button>}
+              <button type="button" className="vx-btn primary" onClick={()=>setDraft(board.create)}>Nouveau</button>
+            </div>
           </header>
           <p>{board.note}</p>
           {empty?<p className="vx-offer-empty">Aucun dossier.</p>:<div className="vx-offer-stats">
@@ -3001,7 +3006,7 @@ function App(){
     <header className="vx-top">
       <button type="button" className="vx-logo" onClick={()=>choosePage('clients')}><img src="/logo-registre-reckless.png" alt=""/><span>Banque Fédérale</span></button>
       <button type="button" className="vx-burger" aria-label="Ouvrir le menu" onClick={()=>setMenuOpen(!menuOpen)}>{menuOpen?'✕':'☰'}</button>
-      <nav className={'vx-links '+(menuOpen?'open':'')}>{menu.map(m=><button type="button" key={m[0]} className={page===m[0]?'active':''} onClick={()=>choosePage(m[0])}>{m[2]}</button>)}</nav>
+      <nav className={'vx-links '+(menuOpen?'open':'')}>{menu.map(m=><button type="button" key={m[0]} className={(page===m[0]||(m[0]==='services'&&SERVICE_PAGE_LIST.includes(page)))?'active':''} onClick={()=>choosePage(m[0])}>{m[2]}</button>)}</nav>
       <div className="vx-tools">
         <select className="vx-select" aria-label="Banque consultée" value={activeAgence} onChange={e=>setActiveAgence(e.target.value)}>
           <option value="toutes">Toutes les banques</option>
@@ -3019,7 +3024,8 @@ function App(){
     </header>
     <main className="vx-main">
       {refreshing&&<div className="vx-refresh">Actualisation…</div>}
-      {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence} clients={clients} notify={notify} setLoans={setLoans} setLifeInsurance={setLifeInsurance} onRefresh={()=>loadAll(me)}/>}
+      {SERVICE_PAGE_LIST.includes(page)&&<button type="button" className="vx-btn quiet vx-back" onClick={()=>choosePage('services')}>← Retour aux services</button>}
+      {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence} clients={clients} notify={notify} setLoans={setLoans} setLifeInsurance={setLifeInsurance} onRefresh={()=>loadAll(me)} onOpenPage={choosePage}/>}
       {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>

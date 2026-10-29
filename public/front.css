@@ -193,6 +193,9 @@
   .vx-offer-stats b { display: block; color: var(--vx-gold-2); font-family: var(--vx-serif); font-size: 22px; letter-spacing: 0; }
   .vx-offer-empty { margin: 4px 0 0 !important; }
   
+  .vx-card-actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+  .vx-back { margin-bottom: 16px; padding: 7px 12px; font-size: 13px; }
+  
   /* ---------- Lignes façon tableau ---------- */
   .vx-row {
     display: grid; grid-template-columns: 1.4fr .8fr .7fr auto; gap: 12px; align-items: center;
