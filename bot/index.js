@@ -194,7 +194,13 @@ async function readThread(forum, thread) {
     batch.forEach((message) => {
       const embeds = message.embeds.map((embed) => {
         const raw = embed.toJSON();
-        return { description: raw.description || '', fields: raw.fields || [], timestamp: raw.timestamp || null };
+        return {
+          title: raw.title || '',
+          description: raw.description || '',
+          fields: raw.fields || [],
+          footer: raw.footer || null,
+          timestamp: raw.timestamp || null
+        };
       });
       if (embeds.length) messages.push({ id: message.id, embeds });
     });
