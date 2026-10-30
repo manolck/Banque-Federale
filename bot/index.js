@@ -17,6 +17,12 @@ loadEnv();
 const apiBase = process.env.BANK_API_URL || 'http://127.0.0.1:3000';
 const key = process.env.DISCORD_AGENDA_API_KEY || '';
 const forumId = process.env.DISCORD_MISSION_FORUM_ID || '';
+const fundsForumId = process.env.DISCORD_FUNDS_FORUM_ID || '';
+const FUNDS_FORUM_NAME = '💰・fonds-spéculatifs';
+const SCAN_EVERY_MS = 15 * 60 * 1000;
+const SCAN_CHUNK = 25;
+let lastScanAt = 0;
+let scanning = false;
 
 function channelIdFrom(url) {
   const match = String(url || '').match(/channels\/\d+\/(\d+)/);
@@ -134,6 +140,94 @@ async function postInterest(client, item) {
   await api('POST', { kind: 'interest', collection: item.collection, id: item.id, message_id: message.id });
 }
 
+async function syncApi(method, body) {
+  const response = await fetch(`${apiBase}/api/fonds_forum_sync`, {
+    method,
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Registre ${response.status}`);
+  return data;
+}
+
+async function findFundsForum(client) {
+  if (fundsForumId) return client.channels.fetch(fundsForumId);
+  const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
+  const channels = await guild.channels.fetch();
+  return channels.find((channel) => channel && channel.type === ChannelType.GuildForum && channel.name === FUNDS_FORUM_NAME) || null;
+}
+
+async function allThreads(forum) {
+  const found = new Map();
+  const active = await forum.threads.fetchActive();
+  active.threads.forEach((thread) => found.set(thread.id, thread));
+  let before;
+  for (let page = 0; page < 20; page += 1) {
+    const archived = await forum.threads.fetchArchived({ limit: 100, before });
+    archived.threads.forEach((thread) => found.set(thread.id, thread));
+    if (!archived.hasMore || !archived.threads.size) break;
+    before = archived.threads.last();
+  }
+  return [...found.values()];
+}
+
+// Ne garde des messages que ce que le registre sait lire : les embeds.
+async function readThread(forum, thread) {
+  const tagNames = new Map((forum.availableTags || []).map((tag) => [tag.id, tag.name]));
+  const messages = [];
+  let before;
+  for (let page = 0; page < 10; page += 1) {
+    const batch = await thread.messages.fetch({ limit: 100, before });
+    if (!batch.size) break;
+    batch.forEach((message) => {
+      const embeds = message.embeds.map((embed) => {
+        const raw = embed.toJSON();
+        return { description: raw.description || '', fields: raw.fields || [], timestamp: raw.timestamp || null };
+      });
+      if (embeds.length) messages.push({ id: message.id, embeds });
+    });
+    before = batch.last().id;
+    if (batch.size < 100) break;
+  }
+  return {
+    id: thread.id,
+    name: thread.name,
+    url: `https://discord.com/channels/${thread.guildId}/${thread.id}`,
+    tags: (thread.appliedTags || []).map((id) => tagNames.get(id)).filter(Boolean),
+    messages
+  };
+}
+
+async function scanFunds(client) {
+  if (scanning) return;
+  scanning = true;
+  try {
+    const forum = await findFundsForum(client);
+    if (!forum || forum.type !== ChannelType.GuildForum) throw new Error(`Forum « ${FUNDS_FORUM_NAME} » introuvable.`);
+    const threads = await allThreads(forum);
+    let created = 0;
+    for (let index = 0; index < threads.length || index === 0; index += SCAN_CHUNK) {
+      const chunk = [];
+      for (const thread of threads.slice(index, index + SCAN_CHUNK)) {
+        try { chunk.push(await readThread(forum, thread)); } catch (error) { console.error('Lecture du fil', thread.id, error.message); }
+      }
+      const last = index + SCAN_CHUNK >= threads.length;
+      const result = await syncApi('POST', { threads: chunk, last });
+      created += result.created || 0;
+    }
+    console.log(`Forum des fonds relu : ${threads.length} fil(s), ${created} nouvel(s) écart(s).`);
+  } finally {
+    lastScanAt = Date.now();
+    scanning = false;
+  }
+}
+
+async function maybeScan(client) {
+  const state = await syncApi('GET');
+  if (state.requested || Date.now() - lastScanAt >= SCAN_EVERY_MS) await scanFunds(client);
+}
+
 async function tick(client) {
   const queue = await api('GET');
   for (const item of queue.publications || []) {
@@ -153,12 +247,16 @@ async function tick(client) {
   }
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// MessageContent est une intention privilégiée : à activer dans le portail développeur Discord (Bot).
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 client.once('clientReady', () => {
   console.log(`Banque Fédérale connectée en tant que ${client.user.tag}`);
   const run = () => tick(client).catch((error) => console.error(error.message));
+  const forum = () => maybeScan(client).catch((error) => console.error('Forum des fonds', error.message));
   run();
+  forum();
   setInterval(run, 60 * 1000);
+  setInterval(forum, 60 * 1000);
 });
 
 if (!process.env.DISCORD_BOT_TOKEN) {

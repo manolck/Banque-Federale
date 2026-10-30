@@ -67,7 +67,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     }
     const {stamp}=await rpStamp();
     const payload={
-      contract_number:await nextNumber(),agency,subscriber_client_id:safeId(b.subscriber_client_id),
+      contract_number:await nextNumber(),status:'active',agency,subscriber_client_id:safeId(b.subscriber_client_id),
       subscriber_first_name:clean(b.subscriber_first_name,100),subscriber_last_name:clean(b.subscriber_last_name,100),subscriber_telegram:clean(b.subscriber_telegram,120)||null,
       beneficiary_first_name:clean(b.beneficiary_first_name,100),beneficiary_last_name:clean(b.beneficiary_last_name,100),beneficiary_telegram:clean(b.beneficiary_telegram,120)||null,
       target_capital:capital,weekly_payment:money(capital/8),interest_rate_weekly:0.05,start_date:start,last_due:addDays(start,49),payments,notes:clean(b.notes,2000)||null,

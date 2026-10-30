@@ -21,6 +21,7 @@
     "pret_term_savings",
     "pret_payroll_contracts",
     "pret_goldstein_booklets",
-    "pret_agent_salaries"
+    "pret_agent_salaries",
+    "pret_fund_sync"
   ]
 }

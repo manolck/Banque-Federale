@@ -353,3 +353,5 @@
   .sal-menu button:hover { background: rgba(214, 169, 90, .12); }
   .sal-menu button.danger { color: var(--vx-red); }
   @media (max-width: 700px) { .sal-main { gap: 10px; } .sal-name { flex-basis: 100%; order: -1; } }
+  .sal-name small { display: block; }
+  .sal-pay:disabled { opacity: .5; cursor: not-allowed; }
