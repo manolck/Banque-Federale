@@ -1210,7 +1210,7 @@ const api={
  documents:client_id=>call('/api/client_documents?client_id='+encodeURIComponent(client_id)), uploadDocument:d=>call('/api/client_documents',{method:'POST',body:JSON.stringify(d)}), deleteDocument:id=>call('/api/client_documents',{method:'DELETE',body:JSON.stringify({id})}), notes:client_id=>call('/api/client_notes?client_id='+encodeURIComponent(client_id)), addNote:d=>call('/api/client_notes',{method:'POST',body:JSON.stringify(d)}), deleteNote:id=>call('/api/client_notes',{method:'DELETE',body:JSON.stringify({id})}), agenda:(from,to)=>call('/api/agenda?actualisation='+Date.now()+(from&&to?`&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`:'')), addAgenda:a=>call('/api/agenda',{method:'POST',body:JSON.stringify(a)}), updateAgenda:a=>call('/api/agenda',{method:'PUT',body:JSON.stringify(a)}), deleteAgenda:id=>call('/api/agenda',{method:'DELETE',body:JSON.stringify({id})}), horseCredits:()=>call('/api/horse_credits'), addHorseCredit:h=>call('/api/horse_credits',{method:'POST',body:JSON.stringify(h)}), updateHorseCredit:h=>call('/api/horse_credits',{method:'PUT',body:JSON.stringify(h)}), deleteHorseCredit:id=>call('/api/horse_credits',{method:'DELETE',body:JSON.stringify({id})}),
  fundSync:()=>call('/api/fonds_forum_sync?actualisation='+Date.now()), fundSyncAct:body=>call('/api/fonds_forum_sync',{method:'PUT',body:JSON.stringify(body)}),
  agentSalaries:()=>call('/api/agent_salaries?actualisation='+Date.now()), saveAgentSalary:(body,method='POST')=>call('/api/agent_salaries',{method,body:JSON.stringify(body)}),
- service:name=>call('/api/'+name+'?actualisation='+Date.now()), saveService:(name,body,method='POST')=>call('/api/'+name,{method,body:JSON.stringify(body)})
+ service:name=>call('/api/'+name+'?actualisation='+Date.now()), saveService:(name,body,method='POST')=>call('/api/'+name,{method,body:JSON.stringify(body)}), deleteService:(name,id)=>call('/api/'+name,{method:'DELETE',body:JSON.stringify({id})})
 };
 function payment(capital,rate,n){capital=Number(capital);rate=Number(rate)/100;n=parseInt(n);if(!capital||!n)return 0;if(!rate)return capital/n;return capital*rate/(1-Math.pow(1+rate,-n));}
 function schedule({capital,rate,n,start}){const p=payment(capital,rate,n); const e=[]; for(let i=0;i<n;i++){const d=new Date(start+'T12:00:00');d.setDate(d.getDate()+i*7);e.push({montant:Number(p.toFixed(2)),date:d.toISOString().split('T')[0],statut:'attente'});} return {echeances:e,total:Number((p*n).toFixed(2)),montant:Number(p.toFixed(2))};}
@@ -1493,6 +1493,28 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
   function leaveDesk(){setDesk(null);onRefresh?.();}
   async function saveLoan(l){const u=l.id?await api.updateLoan(l):await api.addLoan(l);setLoans(l.id?loans.map(x=>x.id===u.id?u:x):[u,...loans]);notify(l.id?'Prêt modifié':'Prêt créé');return u;}
   async function deleteLoan(l){if(!confirm('Supprimer définitivement ce prêt ?'))return;await api.deleteLoan(l.id);setLoans(loans.filter(x=>x.id!==l.id));notify('Prêt supprimé');setDesk(null);}
+  const canDeleteService=canOpenDirection(me);
+  async function deleteServiceContract(group,item,ev){
+    ev?.stopPropagation?.();
+    if(!canDeleteService) return;
+    const label=item.ref||item.title||'ce dossier';
+    if(!confirm('Supprimer définitivement '+label+' ?\nCette action est irréversible.')) return;
+    try{
+      if(group.kind==='loan'){
+        await api.deleteLoan(item.id);
+      }else if(group.kind==='life'){
+        await api.deleteLifeInsurance({id:item.id,reason:'Suppression depuis fiche client',confirmation:'SUPPRIMER'});
+      }else if(group.kind==='horse'){
+        await api.deleteHorseCredit(item.id);
+      }else if(group.kind==='service'&&group.service){
+        await api.deleteService(group.service,item.id);
+      }else{
+        throw new Error('Type de service non supporté.');
+      }
+      notify('Service supprimé');
+      onRefresh?.();
+    }catch(e){notify('⚠ '+(e.message||e));}
+  }
   if(desk?.kind==='loan'&&desk.edit) return <LoanModal open loan={desk.edit} clients={clients} onClose={()=>setDesk({kind:'loan',id:desk.edit.id})} onSave={async l=>{const u=await saveLoan(l);setDesk({kind:'loan',id:u.id});}} defaultAgence={loanAgence(desk.edit)}/>;
   if(desk?.kind==='loan'&&desk.id){const loan=(loans||[]).find(item=>String(item.id)===String(desk.id));if(!loan)return <div className="vx-section"><p className="vx-lead">Prêt introuvable.</p><button type="button" className="vx-btn quiet" onClick={()=>setDesk(null)}>Retour au client</button></div>;return <LoanDetail loan={loan} onBack={()=>setDesk(null)} onUpdate={u=>{if(u._edit){setDesk({kind:'loan',edit:loan});return;}setLoans(loans.map(x=>x.id===u.id?u:x));}} onDelete={deleteLoan} notify={notify} me={me}/>;}
   if(desk?.kind==='loan'&&desk.create) return <LoanModal open prefill={client} clients={clients} onClose={()=>setDesk(null)} onSave={async l=>{await saveLoan(l);setDesk(null);}} defaultAgence={activeAgence&&activeAgence!=='toutes'?activeAgence:'van_horn'}/>;
@@ -1521,7 +1543,7 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
     </header>
     {pack.groups.map(group=><section className="vx-section" key={group.key}>
       <div className="vx-head"><div><h2>{group.title}</h2><p className="vx-lead" style={{textAlign:'left',margin:0}}>{group.items.length?`${group.items.length} contrat${group.items.length>1?'s':''}`:'Aucun contrat'}</p></div><button type="button" className="vx-btn primary" onClick={()=>setDesk({kind:group.kind,service:group.service,create:true})}>Souscrire</button></div>
-      {group.items.map(item=><button type="button" className={'vx-row '+(item.tone||'')} key={item.id} onClick={()=>setDesk({kind:group.kind,service:group.service,id:item.id})}><div><b>{item.ref}</b><small>{item.title}</small></div><span>{item.left}<br/>{item.leftLabel}</span><span>{item.right}<br/>{item.rightLabel}</span><div><b>{item.status}</b><small>{item.extra}</small></div></button>)}
+      {group.items.map(item=><div key={item.id} className={'vx-row '+(item.tone||'')} style={{display:'flex',gap:10,alignItems:'center',justifyContent:'space-between'}}><button type="button" style={{flex:1,border:'none',background:'transparent',color:'inherit',textAlign:'left',cursor:'pointer',display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:12,alignItems:'center'}} onClick={()=>setDesk({kind:group.kind,service:group.service,id:item.id})}><div><b>{item.ref}</b><small>{item.title}</small></div><span>{item.left}<br/>{item.leftLabel}</span><span>{item.right}<br/>{item.rightLabel}</span><div><b>{item.status}</b><small>{item.extra}</small></div></button>{canDeleteService&&<button type="button" className="vx-btn quiet" style={{color:'#ffb0a6',minWidth:96}} onClick={e=>deleteServiceContract(group,item,e)}>Supprimer</button>}</div>)}
     </section>)}
     <section className="vx-fiche-foot">
       <div className="vx-grid-2"><div className="vx-card"><h3>Identité</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div>

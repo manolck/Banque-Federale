@@ -104,10 +104,11 @@ function serviceNotice(service, action, row) {
 function lifeNotice(action, row, details) {
   const extra = details || {};
   if (action === 'record_payment') {
-    return notice('Versement validé', [
-      line('Échéance', extra.installment_number),
-      line('Montant', moneyFr(extra.amount)),
-      row.status === 'payments_complete' ? 'Les huit versements sont terminés.' : 'Les versements continuent.'
+    return notice('Versement encaissé', [
+      line('Semaine', (extra.installment_number != null ? (extra.installment_number + ' / 8') : '—')),
+      line('Montant perçu', moneyFr(extra.amount)),
+      line('Intérêts pris', moneyFr(extra.interest != null ? extra.interest : 0)),
+      
     ], GREEN, row);
   }
   if (action === 'leave_placed') {
