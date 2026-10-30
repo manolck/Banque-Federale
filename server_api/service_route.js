@@ -1,4 +1,9 @@
-const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
+const { sb, json, readBody, currentUser, hasPermission, logAction, handler, roleCodeOf } = require('./_lib');
+
+const CAN_DELETE_SERVICE = new Set(['TECHNICIAN', 'DIRECTOR', 'DEPUTY_DIRECTOR']);
+function canDeleteService(actor) {
+  return CAN_DELETE_SERVICE.has(roleCodeOf(actor));
+}
 const { PRODUCTS } = require('./products');
 const { discordUrlOk } = require('./discord_forms');
 const { serviceNotice, enqueueNotice } = require('./discord_actions');
@@ -93,6 +98,32 @@ function createServiceRoute(name) {
       if (updated.error) return json(res, 500, { error: updated.error.message });
       await sb.from('pret_service_events').insert({ service: name, record_id: body.id, event_type: body.action || 'update', actor_username: actor.username });
       return json(res, 200, updated.data);
+    }
+
+    if (req.method === 'DELETE') {
+      if (!canDeleteService(actor)) {
+        return json(res, 403, { error: 'Suppression réservée au directeur et au directeur adjoint.' });
+      }
+      const body = await readBody(req);
+      if (!body.id) return json(res, 400, { error: 'Dossier manquant.' });
+      const current = await sb.from(product.collection).select('*').eq('id', body.id).maybeSingle();
+      if (current.error) return json(res, 500, { error: current.error.message });
+      if (!current.data) return json(res, 404, { error: 'Dossier introuvable.' });
+      const removed = await sb.from(product.collection).delete().eq('id', body.id);
+      if (removed.error) return json(res, 500, { error: removed.error.message });
+      await sb.from('pret_service_events').insert({
+        service: name,
+        record_id: body.id,
+        event_type: 'deleted',
+        actor_username: actor.username,
+        dossier_number: current.data.dossier_number || current.data.contract_number || null
+      });
+      await logAction(actor, `suppression_${name}`, {
+        id: body.id,
+        dossier: current.data.dossier_number || null,
+        client: current.data.full_name || `${current.data.prenom || ''} ${current.data.nom || ''}`.trim() || null
+      });
+      return json(res, 200, { ok: true });
     }
 
     return json(res, 405, { error: 'Méthode non autorisée' });
