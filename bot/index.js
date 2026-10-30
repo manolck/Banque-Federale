@@ -1,5 +1,16 @@
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
 
+const embeds = message.embeds.map((embed) => {
+  const raw = embed.toJSON();
+  return {
+    title: raw.title || '',
+    description: raw.description || '',
+    fields: raw.fields || [],
+    footer: raw.footer || null,
+    timestamp: raw.timestamp || null
+  };
+});
+
 function loadEnv() {
   const fs = require('fs');
   const path = require('path');
