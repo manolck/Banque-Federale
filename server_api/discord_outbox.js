@@ -124,27 +124,6 @@ module.exports = (req, res) => handler(req, res, async () => {
         if (payment.status === 'paid' || !dueForMission(payment.date, today)) return;
         pushMission(missions, { ...row, prenom: row.subscriber_first_name, nom: row.subscriber_last_name, telegram: row.subscriber_telegram, civility: row.enrollment && row.enrollment.subscriber_civility }, { collection: 'pret_life_insurance_contracts', date: payment.date, amount: payment.amount, slot: payment.number });
       });
-      if (ACTIVE_LIFE.has(row.status) && discordUrlOk(row.discord_url)) {
-        const marker = row.last_interest_bank_date || '';
-        if (!marker || today >= addDays(marker, 7)) {
-          const figures = lifeFinancials(row.payments, lifeAsOf(row));
-          interest.push({
-            collection: 'pret_life_insurance_contracts',
-            id: row.id,
-            discord_url: row.discord_url,
-            embed: letterhead({
-              title: `Relevé d'intérêts — ${row.contract_number}`,
-              description: [
-                `**Intérêts acquis au ${dateFr(today)} :** ${moneyFr(figures.interest)}`,
-                `**Solde :** ${moneyFr(figures.balance)}`,
-                '**Règle :** 5 % par semaine sur le capital investi, intérêts ajoutés à l\'investissement.'
-              ].join('\n'),
-              color: 0x1f8b4c,
-              footer: 'Police d\'assurance-vie IB&TC'
-            })
-          });
-        }
-      }
     }
     for (const row of [...byName.pret_pawn_loans, ...byName.pret_term_savings]) {
       if (row.paid || row.status === 'paye' || row.status === 'clos') continue;

@@ -104,12 +104,20 @@ function serviceNotice(service, action, row) {
 function lifeNotice(action, row, details) {
   const extra = details || {};
   if (action === 'record_payment') {
-    return notice('Versement encaissé', [
-      line('Semaine', (extra.installment_number != null ? (extra.installment_number + ' / 8') : '—')),
-      line('Montant perçu', moneyFr(extra.amount)),
-      line('Intérêts pris', moneyFr(extra.interest != null ? extra.interest : 0)),
-      
-    ], GREEN, row);
+    const number = ref(row);
+    const whoName = who(row);
+    const week = extra.installment_number != null ? `${extra.installment_number} / 8` : '—';
+    const interest = extra.interest != null ? extra.interest : 0;
+    return letterhead({
+      title: `Versement encaissé — ${whoName}${number ? ` (Dossier ${number})` : ''}`.replace(/\s+/g, ' ').trim(),
+      description: [
+        line('Semaine', week),
+        line('Montant perçu', moneyFr(extra.amount)),
+        line('Intérêts pris', moneyFr(interest))
+      ].join('\n'),
+      footer: 'Reçu à conserver.',
+      color: GREEN
+    });
   }
   if (action === 'leave_placed') {
     return notice('Placement maintenu', ['Les fonds restent placés. Les intérêts continuent.'], GOLD, row);

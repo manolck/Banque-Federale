@@ -187,21 +187,37 @@ function lifeAsOf(contract, now = new Date()) {
 }
 
 function lifeFinancials(payments, now = new Date()) {
+  // À chaque nouveau versement : solde = solde_précédent × 1,05 + versement
+  // (le premier versement pose le solde initial, sans intérêts)
   const paid = (Array.isArray(payments) ? payments : [])
-    .filter((payment) => payment && payment.status === 'paid' && payment.paid_at)
-    .map((payment) => ({ amount: money(payment.amount), at: String(payment.paid_at).slice(0, 10) }))
-    .filter((payment) => /^\d{4}-\d{2}-\d{2}$/.test(payment.at))
-    .sort((left, right) => left.at.localeCompare(right.at));
+    .filter((payment) => payment && payment.status === 'paid')
+    .map((payment, index) => ({
+      amount: money(payment.amount),
+      at: payment.paid_at ? String(payment.paid_at).slice(0, 10) : '',
+      number: Number(payment.number) || (index + 1)
+    }))
+    .sort((left, right) => {
+      const byNum = left.number - right.number;
+      if (byNum) return byNum;
+      return String(left.at).localeCompare(String(right.at));
+    });
   let balance = 0;
   let principal = 0;
+  let lastInterest = 0;
   for (const payment of paid) {
-    const weeks = completedWeeks(payment.at, now);
+    if (balance > 0) {
+      lastInterest = money(balance * (LIFE_WEEKLY - 1));
+      balance = money(balance * LIFE_WEEKLY);
+    } else {
+      lastInterest = 0;
+    }
     principal = money(principal + payment.amount);
-    balance = money(balance + growLifeDeposit(payment.amount, weeks));
+    balance = money(balance + payment.amount);
   }
   return {
     principal,
     interest: money(balance - principal),
+    last_interest: lastInterest,
     balance,
     paid_installments: paid.length,
     remaining_installments: Math.max(0, 8 - paid.length)

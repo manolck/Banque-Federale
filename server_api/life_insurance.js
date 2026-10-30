@@ -110,7 +110,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       const number=Number(b.installment_number),payments=[...(current.payments||[])],index=payments.findIndex(p=>Number(p.number)===number);
       if(index<0)return json(res,400,{error:'Échéance invalide.'}); if(payments[index].status==='paid')return json(res,409,{error:'Cette échéance est déjà payée.'});
       payments[index]={...payments[index],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor.username};
-      patch.payments=payments; patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active'; const fin=require('./money').lifeFinancials(payments); details={installment_number:number,amount:payments[index].amount,interest:fin.interest};
+      patch.payments=payments; patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active'; const fin=require('./money').lifeFinancials(payments); details={installment_number:number,amount:payments[index].amount,interest:fin.last_interest};
     }else if(action==='leave_placed'){
       if(!['payments_complete','placed'].includes(current.status))return json(res,409,{error:'Les huit versements doivent être terminés.'}); patch.status='placed';
     }else if(action==='request_closure'){
@@ -137,11 +137,11 @@ module.exports=(req,res)=>handler(req,res,async()=>{
 
   if(req.method==='DELETE'){
     if(roleRank(actor)<roleRank('DEPUTY_DIRECTOR'))return json(res,403,{error:'Suppression réservée au directeur et au directeur adjoint.'});
-    const b=await readBody(req),id=safeId(b.id),reason=clean(b.reason,500);
-    if(!id||!reason||b.confirmation!=='SUPPRIMER')return json(res,400,{error:'Motif et confirmation SUPPRIMER obligatoires.'});
+    const b=await readBody(req),id=safeId(b.id),reason=clean(b.reason,500)||'Suppression direction';
+    if(!id)return json(res,400,{error:'ID manquant.'});
     const {data:current}=await sb.from('pret_life_insurance_contracts').select('*').eq('id',id).maybeSingle();
     if(!current)return json(res,404,{error:'Contrat introuvable.'});
-    await logAction(actor,'suppression_assurance_vie',{contract_number:current.contract_number,reason,snapshot:{subscriber:`${current.subscriber_first_name} ${current.subscriber_last_name}`,beneficiary:`${current.beneficiary_first_name} ${current.beneficiary_last_name}`,target_capital:current.target_capital}});
+    await logAction(actor,'suppression_assurance_vie',{contract_number:current.contract_number,reason,had_payments:(current.payments||[]).some(p=>p.status==='paid'),snapshot:{subscriber:`${current.subscriber_first_name} ${current.subscriber_last_name}`,beneficiary:`${current.beneficiary_first_name} ${current.beneficiary_last_name}`,target_capital:current.target_capital,status:current.status}});
     const {error}=await sb.from('pret_life_insurance_contracts').delete().eq('id',id);if(error)return json(res,500,{error:error.message});
     return json(res,200,{ok:true});
   }
