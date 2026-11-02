@@ -1,7 +1,7 @@
 const { timingSafeEqual } = require('node:crypto');
 const { sb, json, readBody, handler } = require('./_lib');
-const { addDays, validDate, money, moneyFr, dateFr, discordUrlOk, stateOf, stateLabel, goldsteinNext, lifeFinancials, lifeAsOf } = require('./money');
-const { missionTitle, missionEmbed, letterhead, embedFromText, RECEIPT_FORUMS, receiptTitle, receiptTags } = require('./discord_forms');
+const { addDays, validDate, money, moneyFr, dateFr, discordUrlOk, stateOf, stateLabel, goldsteinNext, lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, civilToday } = require('./money');
+const { missionTitle, missionEmbed, letterhead, embedFromText, RECEIPT_FORUMS, receiptTitle, receiptTags, lifeInterestEmbed } = require('./discord_forms');
 const { pendingNotices } = require('./discord_actions');
 const { WEEKLY_RATE } = require('./fonds_interest');
 const { settleFunds, acknowledgeMarket } = require('./fonds_market');
@@ -162,6 +162,41 @@ module.exports = (req, res) => handler(req, res, async () => {
       pushMission(missions, row, { collection: 'pret_goldstein_booklets', kind: 'capitalization', date: row.next_capitalization, interest: row.period_interest, nextBalance: row.next_balance, slot: '' });
     }
 
+    const clock = civilToday();
+    for (const row of byName.pret_life_insurance_contracts) {
+      if (!lifePaymentsComplete(row) || !discordUrlOk(row.discord_url)) continue;
+      const lastPaid = lifeLastPaidOn(row);
+      if (!lastPaid) continue;
+      const posted = row.interest_keys || {};
+      let on = addDays(lastPaid, 7);
+      const freeze = lifeAsOf(row, new Date(`${clock}T12:00:00Z`));
+      const freezeDay = freeze instanceof Date ? freeze.toISOString().slice(0, 10) : clock;
+      const until = freezeDay < clock ? freezeDay : clock;
+      while (on && on <= until) {
+        const key = `placement:${on}`;
+        if (!posted[key]) {
+          const asOf = new Date(`${on}T12:00:00Z`);
+          const current = lifeFinancials(row.payments, asOf);
+          const previous = lifeFinancials(row.payments, new Date(`${addDays(on, -7)}T12:00:00Z`));
+          interest.push({
+            collection: 'pret_life_insurance_contracts',
+            id: row.id,
+            key,
+            on,
+            discord_url: row.discord_url,
+            embed: lifeInterestEmbed(row, {
+              on,
+              balance: current.balance,
+              principal: current.principal,
+              interest: current.interest,
+              week_interest: money(current.balance - previous.balance)
+            })
+          });
+        }
+        on = addDays(on, 7);
+      }
+    }
+
     let markets = [];
     try {
       markets = await settleFunds(byName.pret_speculative_funds, new Date());
@@ -188,7 +223,14 @@ module.exports = (req, res) => handler(req, res, async () => {
       if (discordUrlOk(body.discord_url)) patch.discord_url = String(body.discord_url).trim();
     }
     else if (body.kind === 'mission') patch = { mission_keys: { ...(current.data.mission_keys || {}), [body.key]: body.message_id || 'posted' } };
-    else if (body.kind === 'interest') patch = { last_interest_bank_date: today };
+    else if (body.kind === 'interest') {
+      const key = String(body.key || '').trim();
+      patch = {
+        last_interest_on: validDate(body.on) ? body.on : today,
+        last_interest_bank_date: today
+      };
+      if (key) patch.interest_keys = { ...(current.data.interest_keys || {}), [key]: body.message_id || 'posted' };
+    }
     else if (body.kind === 'notice') {
       const queued = Array.isArray(current.data.discord_notices) ? current.data.discord_notices : [];
       patch = { discord_notices: queued.filter((item) => item.id !== body.notice_id) };

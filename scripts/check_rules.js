@@ -80,6 +80,26 @@ const lifeWeek2 = money.lifeFinancials([
 assert.strictEqual(lifeWeek2.principal, 1250);
 assert.strictEqual(lifeWeek2.balance, 1345.31);
 assert.strictEqual(lifeWeek2.interest, 95.31);
+const lifePaid = Array.from({ length: 8 }, (_, index) => ({
+  status: 'paid',
+  amount: 625,
+  number: index + 1,
+  paid_at: money.addDays('2026-01-01', index * 7)
+}));
+assert.strictEqual(money.lifePaymentsComplete({ payments: lifePaid }), true);
+assert.strictEqual(money.lifePaymentsComplete({
+  payments: lifePaid.map((payment, index) => index < 7 ? payment : { ...payment, status: 'pending', paid_at: null })
+}), false);
+assert.strictEqual(money.lifeLastPaidOn({ payments: lifePaid }), '2026-02-19');
+const lifeStatementOn = money.addDays(money.lifeLastPaidOn({ payments: lifePaid }), 7);
+assert.strictEqual(lifeStatementOn, '2026-02-26');
+const lifeAtStatement = money.lifeFinancials(lifePaid, new Date(`${lifeStatementOn}T12:00:00Z`));
+const lifeWeekBefore = money.lifeFinancials(lifePaid, new Date(`${money.addDays(lifeStatementOn, -7)}T12:00:00Z`));
+assert.strictEqual(money.money(lifeAtStatement.balance - lifeWeekBefore.balance), lifeAtStatement.last_interest);
+assert.strictEqual(
+  money.lifeAsOf({ status: 'closed', closed_at: '2026-03-05T10:00:00Z' }, new Date('2026-03-20T12:00:00Z')).toISOString().slice(0, 10),
+  '2026-03-05'
+);
 const fundGain = money.fundWithdrawalQuote({ amount: 1500, capital_balance: 2000 }, 2000);
 assert.strictEqual(fundGain.profit, 500);
 assert.strictEqual(fundGain.tax, 75);
@@ -146,6 +166,15 @@ assert.deepStrictEqual(forms.receiptTags('pret_loans', { agence: 'sunset' }), ['
 assert.deepStrictEqual(forms.receiptTags('pret_consigne_contracts', { agency: 'rhodes', dossier_offered: true }), ['Ouvert', 'OFFERT']);
 assert.deepStrictEqual(forms.receiptTags('pret_speculative_funds', { agency: 'blackwater', tier: 'Palier II', profit_distribution: 'Versement hebdomadaire' }), ['Palier II', 'Blackwater', 'Versement Hebdo']);
 assert.deepStrictEqual(forms.receiptTags('pret_life_insurance_contracts', { agency: 'valentine' }), ['Période de versement']);
+const lifeInterest = forms.lifeInterestEmbed(
+  { contract_number: 'AV-000001', subscriber_first_name: 'Ada', subscriber_last_name: 'Lovelace' },
+  { on: '2026-02-26', balance: 5000, principal: 5000, interest: 0, week_interest: 250 }
+);
+assert.strictEqual(lifeInterest.color, 0x1f8b4c);
+assert.ok(lifeInterest.title.includes('AV-000001'));
+assert.ok(lifeInterest.description.includes('Solde'));
+assert.ok(lifeInterest.description.includes('250'));
+assert.ok(lifeInterest.footer.text.includes('clôture'));
 assert.deepStrictEqual(forms.receiptTags('pret_horse_credits', { statut: 'en_cours' }), ['Pari en cours']);
 assert.strictEqual(forms.RECEIPT_FORUMS.pret_goldstein_booklets, undefined);
 

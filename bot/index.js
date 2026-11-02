@@ -137,7 +137,14 @@ async function postInterest(client, item) {
   const channel = await client.channels.fetch(channelIdFrom(item.discord_url));
   const embed = richEmbed(item.embed);
   const message = await channel.send(embed ? { embeds: [embed] } : { content: String(item.content || '').slice(0, 1900) });
-  await api('POST', { kind: 'interest', collection: item.collection, id: item.id, message_id: message.id });
+  await api('POST', {
+    kind: 'interest',
+    collection: item.collection,
+    id: item.id,
+    key: item.key,
+    on: item.on,
+    message_id: message.id
+  });
 }
 
 async function syncApi(method, body) {

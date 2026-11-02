@@ -622,11 +622,28 @@ async function nextSerial(collection, field, prefix) {
   return `${prefix}${String(max + 1).padStart(6, '0')}`;
 }
 
+function lifeInterestEmbed(row, statement) {
+  const number = text(row && row.contract_number, 40);
+  const who = `${text(row && row.subscriber_first_name, 80)} ${text(row && row.subscriber_last_name, 80)}`.trim() || 'Souscripteur';
+  return letterhead({
+    title: `Relevé hebdomadaire — ${who}${number ? ` (Dossier ${number})` : ''}`.replace(/\s+/g, ' ').trim(),
+    color: 0x1f8b4c,
+    description: [
+      line('Date du relevé', dateFr(statement && statement.on)),
+      line('Solde', moneyFr(statement && statement.balance)),
+      line('Intérêts de la semaine', moneyFr(statement && statement.week_interest)),
+      line('Capital versé', moneyFr(statement && statement.principal)),
+      line('Intérêts cumulés', moneyFr(statement && statement.interest))
+    ].join('\n'),
+    footer: 'Placement en cours. Relevé automatique jusqu’à clôture du contrat.'
+  });
+}
+
 module.exports = {
   rpStamp, nextSerial, nextTermDossier, validDate,
   AGENCIES, AGENCY_LABELS, CONSIGNE_BANKS, COVERAGES,
   text, requireText, requireUrl, discordUrlOk, letterhead, embedFromText,
-  lifeEmbed, fondsEmbed, pawnText, pawnEmbed, consigneEmbed, termEmbed, payrollEmbed, goldsteinEmbed,
+  lifeEmbed, lifeInterestEmbed, fondsEmbed, pawnText, pawnEmbed, consigneEmbed, termEmbed, payrollEmbed, goldsteinEmbed,
   consigneText, termText, payrollText, goldsteinText, missionText, missionTitle, missionEmbed,
   RECEIPT_FORUMS, receiptTitle, receiptTags,
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein, money

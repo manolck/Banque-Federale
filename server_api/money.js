@@ -199,8 +199,7 @@ function lifeAsOf(contract, now = new Date()) {
 }
 
 function lifeFinancials(payments, now = new Date()) {
-  // À chaque nouveau versement : solde = solde_précédent × 1,05 + versement
-  // (le premier versement pose le solde initial, sans intérêts)
+  // Chaque versement compose 5 % par semaine pleine écoulée depuis son paid_at.
   const paid = (Array.isArray(payments) ? payments : [])
     .filter((payment) => payment && payment.status === 'paid')
     .map((payment, index) => ({
@@ -217,14 +216,12 @@ function lifeFinancials(payments, now = new Date()) {
   let principal = 0;
   let lastInterest = 0;
   for (const payment of paid) {
-    if (balance > 0) {
-      lastInterest = money(balance * (LIFE_WEEKLY - 1));
-      balance = money(balance * LIFE_WEEKLY);
-    } else {
-      lastInterest = 0;
-    }
+    const weeks = payment.at ? completedWeeks(payment.at, now) : 0;
+    const grown = growLifeDeposit(payment.amount, weeks);
+    const previous = weeks > 0 ? growLifeDeposit(payment.amount, weeks - 1) : payment.amount;
     principal = money(principal + payment.amount);
-    balance = money(balance + payment.amount);
+    balance = money(balance + grown);
+    lastInterest = money(lastInterest + (grown - previous));
   }
   return {
     principal,
@@ -234,6 +231,32 @@ function lifeFinancials(payments, now = new Date()) {
     paid_installments: paid.length,
     remaining_installments: Math.max(0, 8 - paid.length)
   };
+}
+
+function lifePaymentsComplete(row) {
+  const payments = Array.isArray(row && row.payments) ? row.payments : [];
+  return payments.length > 0 && payments.every((payment) => payment && payment.status === 'paid');
+}
+
+function lifeLastPaidOn(row) {
+  const paid = (Array.isArray(row && row.payments) ? row.payments : [])
+    .filter((payment) => payment && payment.status === 'paid' && payment.paid_at)
+    .map((payment) => String(payment.paid_at).slice(0, 10))
+    .sort();
+  return paid.length ? paid[paid.length - 1] : '';
+}
+
+function civilToday(now = new Date()) {
+  const bag = {};
+  for (const part of new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now)) {
+    if (part.type !== 'literal') bag[part.type] = part.value;
+  }
+  return `${bag.year}-${bag.month}-${bag.day}`;
 }
 
 function fundCapital(row) {
@@ -287,6 +310,6 @@ module.exports = {
   money, moneyFr, dateFr, marketDateFr, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
   TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
-  lifeFinancials, lifeAsOf,
+  lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, civilToday, completedWeeks, growLifeDeposit,
   fundCapital, fundCostBasis, fundDepositQuote, fundWithdrawalQuote
 };

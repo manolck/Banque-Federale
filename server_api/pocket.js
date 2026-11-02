@@ -10,84 +10,115 @@ function pocketUrl() {
   return process.env.POCKETBASE_URL || 'http://127.0.0.1:8090';
 }
 
+function authLost(error) {
+  const message = error && error.message ? error.message : String(error || '');
+  const status = error && (error.status || error.statusCode);
+  return status === 401
+    || status === 403
+    || /Only superusers can perform this action|valid record authorization|Failed to authenticate|unauthorized/i.test(message);
+}
+
 function friendly(error) {
   const message = error && error.message ? error.message : String(error || 'erreur');
-  if (/ECONNREFUSED|ENOTFOUND|fetch failed|Failed to authenticate/i.test(message)) {
+  if (/ECONNREFUSED|ENOTFOUND|fetch failed/i.test(message)) {
     return `PocketBase indisponible (${pocketUrl()}). ${message}`;
+  }
+  if (/Only superusers can perform this action|Failed to authenticate|valid record authorization/i.test(message)) {
+    return `PocketBase refuse l’accès (${pocketUrl()}). Vérifie POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD : ce doit être le compte superuser créé avec « pocketbase superuser upsert », puis relance Node.`;
   }
   return message;
 }
 
+function resetClient() {
+  clientPromise = null;
+}
+
+async function authenticate() {
+  const PocketBase = require('pocketbase/cjs');
+  const pb = new PocketBase(pocketUrl());
+  pb.autoCancellation(false);
+  const email = process.env.POCKETBASE_ADMIN_EMAIL || '';
+  const password = process.env.POCKETBASE_ADMIN_PASSWORD || '';
+  if (!email || !password) {
+    throw new Error('POCKETBASE_ADMIN_EMAIL et POCKETBASE_ADMIN_PASSWORD sont requis.');
+  }
+  try {
+    await pb.collection('_superusers').authWithPassword(email, password);
+  } catch (first) {
+    if (!pb.admins || !pb.admins.authWithPassword) throw new Error(friendly(first));
+    try {
+      await pb.admins.authWithPassword(email, password);
+    } catch (second) {
+      throw new Error(friendly(second));
+    }
+  }
+  if (!pb.authStore.isValid) {
+    throw new Error(friendly({ message: 'Only superusers can perform this action.' }));
+  }
+  return pb;
+}
+
 async function client() {
   if (!clientPromise) {
-    clientPromise = (async () => {
-      const PocketBase = require('pocketbase/cjs');
-      const pb = new PocketBase(pocketUrl());
-      pb.autoCancellation(false);
-      const email = process.env.POCKETBASE_ADMIN_EMAIL || '';
-      const password = process.env.POCKETBASE_ADMIN_PASSWORD || '';
-      if (!email || !password) {
-        throw new Error('POCKETBASE_ADMIN_EMAIL et POCKETBASE_ADMIN_PASSWORD sont requis.');
-      }
-      try {
-        await pb.collection('_superusers').authWithPassword(email, password);
-      } catch (first) {
-        if (!pb.admins || !pb.admins.authWithPassword) throw new Error(friendly(first));
-        try {
-          await pb.admins.authWithPassword(email, password);
-        } catch (second) {
-          throw new Error(friendly(second));
-        }
-      }
-      return pb;
-    })().catch((error) => {
-      clientPromise = null;
+    clientPromise = authenticate().catch((error) => {
+      resetClient();
       throw error;
     });
   }
   return clientPromise;
 }
 
+async function withAuth(run) {
+  try {
+    return await run(await client());
+  } catch (error) {
+    if (!authLost(error)) throw error;
+    resetClient();
+    return run(await client());
+  }
+}
+
 async function ensure(name) {
   if (ensured.has(name)) return;
-  const pb = await client();
-  try {
-    await pb.collections.getOne(name);
-    ensured.add(name);
-    return;
-  } catch (error) {
-    const missing = /wasn't found|not found|404/i.test(error && error.message || '');
-    if (!missing) throw new Error(friendly(error));
-  }
-  const body = {
-    name,
-    type: 'base',
-    listRule: null,
-    viewRule: null,
-    createRule: null,
-    updateRule: null,
-    deleteRule: null,
-    fields: [{ name: 'row', type: 'json', required: false }]
-  };
-  try {
-    await pb.collections.create(body);
-  } catch (error) {
+  await withAuth(async (pb) => {
     try {
-      await pb.collections.create({
-        name,
-        type: 'base',
-        listRule: null,
-        viewRule: null,
-        createRule: null,
-        updateRule: null,
-        deleteRule: null,
-        schema: [{ name: 'row', type: 'json', required: false }]
-      });
-    } catch (second) {
-      if (!/already|duplicate/i.test(second.message || '')) throw new Error(friendly(second));
+      await pb.collections.getOne(name);
+      ensured.add(name);
+      return;
+    } catch (error) {
+      const missing = /wasn't found|not found|404/i.test(error && error.message || '');
+      if (!missing) throw new Error(friendly(error));
     }
-  }
-  ensured.add(name);
+    const body = {
+      name,
+      type: 'base',
+      listRule: null,
+      viewRule: null,
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+      fields: [{ name: 'row', type: 'json', required: false }]
+    };
+    try {
+      await pb.collections.create(body);
+    } catch (error) {
+      try {
+        await pb.collections.create({
+          name,
+          type: 'base',
+          listRule: null,
+          viewRule: null,
+          createRule: null,
+          updateRule: null,
+          deleteRule: null,
+          schema: [{ name: 'row', type: 'json', required: false }]
+        });
+      } catch (second) {
+        if (!/already|duplicate/i.test(second.message || '')) throw new Error(friendly(second));
+      }
+    }
+    ensured.add(name);
+  });
 }
 
 async function ensureCollections() {
@@ -150,20 +181,22 @@ function sortRows(rows, orders) {
 }
 
 async function allRows(name) {
-  const pb = await client();
   await ensure(name);
-  const records = await pb.collection(name).getFullList({ batch: 200, requestKey: null });
-  return records.map(materialize);
+  return withAuth(async (pb) => {
+    const records = await pb.collection(name).getFullList({ batch: 200, requestKey: null });
+    return records.map(materialize);
+  });
 }
 
 async function writeRow(name, id, row) {
-  const pb = await client();
   const stored = { ...row };
   delete stored.id;
-  const record = id
-    ? await pb.collection(name).update(id, { row: stored }, { requestKey: null })
-    : await pb.collection(name).create({ row: stored }, { requestKey: null });
-  return materialize(record);
+  return withAuth(async (pb) => {
+    const record = id
+      ? await pb.collection(name).update(id, { row: stored }, { requestKey: null })
+      : await pb.collection(name).create({ row: stored }, { requestKey: null });
+    return materialize(record);
+  });
 }
 
 function shape(rows, state) {
@@ -227,10 +260,11 @@ async function execute(state) {
 
     if (state.op === 'delete') {
       if (!state.filters.length) return { data: null, error: { message: 'Suppression sans filtre refusée.' }, count: 0 };
-      const pb = await client();
-      for (const existing of filtered) {
-        await pb.collection(state.collection).delete(existing.id, { requestKey: null });
-      }
+      await withAuth(async (pb) => {
+        for (const existing of filtered) {
+          await pb.collection(state.collection).delete(existing.id, { requestKey: null });
+        }
+      });
       return shape(filtered, state);
     }
 

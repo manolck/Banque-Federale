@@ -6,8 +6,8 @@ Registre des services bancaires RP. L'agence Van Horn, le préfixe `VH` et les c
 
 1. Installe les dépendances : `npm install`.
 2. Copie `.env.example` vers `.env`.
-3. Renseigne `POCKETBASE_URL` (en local, `http://127.0.0.1:8090`), le courriel et le mot de passe admin PocketBase, `SESSION_SECRET` (32 caractères minimum) et les variables Discord.
-4. Les collections sont créées au démarrage par le process Node. Leurs règles n'autorisent que le compte admin.
+3. Renseigne `POCKETBASE_URL` (en local, `http://127.0.0.1:8090`), le courriel et le mot de passe **superuser** PocketBase, `SESSION_SECRET` (32 caractères minimum) et les variables Discord.
+4. Sur la machine PocketBase, crée ce compte si besoin : `./pocketbase superuser upsert EMAIL MOT_DE_PASSE` (mêmes valeurs que `POCKETBASE_ADMIN_EMAIL` / `POCKETBASE_ADMIN_PASSWORD`). Les collections sont créées au démarrage par Node ; leurs règles n’autorisent que ce superuser.
 5. Lance le registre : `npm start`.
 6. Lance le bot dans un second process : `npm run bot`.
 7. `DISCORD_MISSION_FORUM_ID` est le forum des ordres de mission. Les étiquettes attendues sont `texas`, `louisiane` et `à faire`.
