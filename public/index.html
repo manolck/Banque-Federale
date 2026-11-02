@@ -2946,6 +2946,7 @@ function SalaryPage({notify}){
   </div>;
 }
 const rpDay=v=>{const m=String(v||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return String(v||'—');const y=Number(m[1])>=2000?1904+(Number(m[1])-2026):m[1];return m[3]+'/'+m[2]+'/'+y};
+const marketRpDay=v=>{const m=String(v||'').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return rpDay(v);const y=Number(m[1])>=2000?1904+(Number(m[1])-2026):Number(m[1]);const d=new Date(Date.UTC(y,Number(m[2])-1,Number(m[3]),12));if(Number.isNaN(d.getTime()))return rpDay(v);d.setUTCDate(d.getUTCDate()-d.getUTCDay());return String(d.getUTCDate()).padStart(2,'0')+'/'+String(d.getUTCMonth()+1).padStart(2,'0')+'/'+d.getUTCFullYear();};
 const pctTxt=n=>(Number(n)>0?'+':'')+String(Number(n)).replace('.',',')+' %';
 function FundSyncPage({notify,canWrite,onRefresh}){
   const[data,setData]=useState(null),[err,setErr]=useState(''),[busyId,setBusyId]=useState(null);
@@ -2981,10 +2982,10 @@ function FundSyncPage({notify,canWrite,onRefresh}){
     if(r.kind==='status')return {label:'Statut',lines:['Registre : '+(p.current_status||'ouvert')+' → forum : '+p.status]};
     if(r.kind==='unknown_dossier')return {label:'Dossier inconnu',lines:['Le fil « '+(p.name||r.thread_name)+' » ne correspond à aucun dossier du registre.']};
     const s=p.statement||{},c=p.current;
-    const forum=rpDay(s.date)+' · '+pctTxt(s.result_percent)+' · '+fCur(s.capital_before)+' → '+fCur(s.capital_after);
+    const forum=marketRpDay(s.date)+' · '+pctTxt(s.result_percent)+' · '+fCur(s.capital_before)+' → '+fCur(s.capital_after);
     return r.kind==='add_statement'
       ?{label:'Relevé manquant',lines:['Forum : '+forum,'Registre : aucun relevé correspondant']}
-      :{label:'Relevé différent',lines:['Forum : '+forum,'Registre : '+rpDay(c&&c.on)+' · '+pctTxt(c&&c.result_percent)+' · '+fCur(c&&c.capital_before)+' → '+fCur(c&&c.capital_after)]};
+      :{label:'Relevé différent',lines:['Forum : '+forum,'Registre : '+marketRpDay(c&&c.on)+' · '+pctTxt(c&&c.result_percent)+' · '+fCur(c&&c.capital_before)+' → '+fCur(c&&c.capital_after)]};
   }
   const list=data?.proposals||[];
   const last=data?.last_scan?new Date(data.last_scan).toLocaleString('fr-FR'):'jamais';

@@ -1,5 +1,5 @@
 const { sb, json, currentUser, hasPermission, handler } = require('./_lib');
-const { money, dateFr, addDays, fundCapital } = require('./money');
+const { money, marketDateFr, addDays, fundCapital } = require('./money');
 const { PALIERS, TIER_OF, LIBELLES, CONFIG, etatInitial, tirageSemaine, issueSemaine } = require('./fonds_engine');
 
 const SETTING_KEY = 'fonds_market';
@@ -30,30 +30,35 @@ function parisParts(date) {
   };
 }
 
-function upcomingFriday(date) {
+function upcomingSunday(date) {
   const parts = parisParts(date);
-  const delta = (5 - parts.weekday + 7) % 7;
+  const delta = (0 - parts.weekday + 7) % 7;
   return addDays(parts.date, delta);
 }
 
-function slotReached(date, friday) {
+function slotReached(date, sunday) {
   const parts = parisParts(date);
-  if (parts.date > friday) return true;
-  if (parts.date < friday) return false;
+  if (parts.date > sunday) return true;
+  if (parts.date < sunday) return false;
   return parts.hour > 18 || (parts.hour === 18 && parts.minute >= 0);
 }
 
 function initialMarket(date) {
   return {
-    next: upcomingFriday(date),
+    next: upcomingSunday(date),
     etats: { I: etatInitial(), II: etatInitial(), III: etatInitial() },
     weeks: {}
   };
 }
 
-function dueFriday(state, date) {
+function dueSunday(state, date) {
   if (!state || !state.next) return '';
   return slotReached(date, state.next) ? state.next : '';
+}
+
+function isParisSunday(iso) {
+  const parts = parisParts(new Date(`${String(iso || '').slice(0, 10)}T12:00:00Z`));
+  return parts.weekday === 0;
 }
 
 function percentFr(value) {
@@ -70,20 +75,20 @@ function blankTotals() {
   };
 }
 
-function marketLine(row, friday) {
-  return (Array.isArray(row && row.statements) ? row.statements : []).find((item) => item && item.market && item.on === friday) || null;
+function marketLine(row, sunday) {
+  return (Array.isArray(row && row.statements) ? row.statements : []).find((item) => item && item.market && item.on === sunday) || null;
 }
 
-function applyFund(row, friday, results) {
+function applyFund(row, sunday, results) {
   if (!row || row.status !== 'ouvert') return null;
   const nom = TIER_OF[row.tier];
   const draw = nom && results && results[nom];
   if (!draw) return null;
-  if (marketLine(row, friday)) return null;
+  if (marketLine(row, sunday)) return null;
   const before = fundCapital(row);
   const after = money(Math.max(0, before * (1 + Number(draw.final) / 100)));
   const statements = (Array.isArray(row.statements) ? row.statements : []).concat([{
-    on: friday,
+    on: sunday,
     result_percent: draw.final,
     capital_before: before,
     capital_after: after,
@@ -186,7 +191,7 @@ function projectionField(nom, etats) {
 function marketEmbed(week) {
   const board = week || {};
   const results = board.results || {};
-  const when = dateFr(board.on);
+  const when = marketDateFr(board.on);
   return {
     title: 'Haussmann Capital Partners',
     color: 0x1f8b4c,
@@ -220,7 +225,9 @@ function channelId() {
 }
 
 function present(state, date) {
-  const base = state && state.next ? state : initialMarket(date);
+  const now = date instanceof Date ? date : new Date();
+  const base = state && state.next ? { ...state } : initialMarket(now);
+  if (base.next && !isParisSunday(base.next)) base.next = upcomingSunday(now);
   const applied = Object.keys(base.weeks || {}).filter((key) => base.weeks[key] && base.weeks[key].applied).sort();
   const on = applied.length ? applied[applied.length - 1] : '';
   const week = on ? base.weeks[on] : null;
@@ -292,9 +299,13 @@ async function settleFunds(funds, date) {
     state = initialMarket(now);
     dirty = true;
   }
-  const friday = dueFriday(state, now);
-  if (friday) {
-    if (!state.weeks[friday]) {
+  if (state.next && !isParisSunday(state.next)) {
+    state.next = upcomingSunday(now);
+    dirty = true;
+  }
+  const sunday = dueSunday(state, now);
+  if (sunday) {
+    if (!state.weeks[sunday]) {
       const avant = snapshot(state.etats);
       const drawn = tirageSemaine(state.etats);
       const results = {};
@@ -306,7 +317,7 @@ async function settleFunds(funds, date) {
           p_gain: drawn.details[nom].p_gain
         };
       }
-      state.weeks[friday] = {
+      state.weeks[sunday] = {
         results,
         avant,
         apres: snapshot(drawn.etats),
@@ -319,16 +330,16 @@ async function settleFunds(funds, date) {
       await saveState(state);
       dirty = false;
     }
-    const week = state.weeks[friday];
+    const week = state.weeks[sunday];
     if (!week.applied) {
       const totals = blankTotals();
       for (const row of funds || []) {
-        const existing = marketLine(row, friday);
+        const existing = marketLine(row, sunday);
         if (existing) {
           addTotal(totals, row.tier, existing);
           continue;
         }
-        const patch = applyFund(row, friday, week.results);
+        const patch = applyFund(row, sunday, week.results);
         if (!patch) continue;
         const updated = await sb.from('pret_speculative_funds').update(patch).eq('id', row.id);
         if (updated.error) throw new Error(updated.error.message);
@@ -337,9 +348,9 @@ async function settleFunds(funds, date) {
       }
       week.totals = totals;
       week.applied = true;
-      state.next = addDays(friday, 7);
+      state.next = addDays(sunday, 7);
       const signe = PALIERS.map((nom) => `${nom} ${percentFr(week.results[nom].final)}`).join(', ');
-      console.log(`Séance des fonds ${friday} : ${signe}`);
+      console.log(`Séance des fonds ${sunday} : ${signe}`);
       dirty = true;
     }
   }
@@ -376,8 +387,10 @@ route.settleFunds = settleFunds;
 route.acknowledgeMarket = acknowledgeMarket;
 route.present = present;
 route.initialMarket = initialMarket;
-route.dueFriday = dueFriday;
-route.upcomingFriday = upcomingFriday;
+route.dueSunday = dueSunday;
+route.upcomingSunday = upcomingSunday;
+route.dueFriday = dueSunday;
+route.upcomingFriday = upcomingSunday;
 route.slotReached = slotReached;
 route.applyFund = applyFund;
 route.marketEmbed = marketEmbed;

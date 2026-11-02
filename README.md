@@ -11,7 +11,7 @@ Registre des services bancaires RP. L'agence Van Horn, le préfixe `VH` et les c
 5. Lance le registre : `npm start`.
 6. Lance le bot dans un second process : `npm run bot`.
 7. `DISCORD_MISSION_FORUM_ID` est le forum des ordres de mission. Les étiquettes attendues sont `texas`, `louisiane` et `à faire`.
-8. `DISCORD_FUNDS_CHANNEL_ID` est le salon texte qui reçoit, chaque vendredi à 18 h (heure de Paris), un relevé par palier. Le même résultat est appliqué aux dossiers ouverts de ce palier. Les dossiers en pause ou clôturés ne bougent pas.
+8. `DISCORD_FUNDS_CHANNEL_ID` est le salon texte qui reçoit, chaque dimanche à 18 h (heure de Paris), un relevé par palier. Le même résultat est appliqué aux dossiers ouverts de ce palier. Les dossiers en pause ou clôturés ne bougent pas.
 
 Le navigateur parle uniquement à l'API Node. PocketBase reste sur la machine.
 

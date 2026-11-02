@@ -25,18 +25,18 @@ function normal(text) {
 }
 
 // Date RP de l'embed (année 1904) -> date réelle du registre (année 2026),
-// puis recul jusqu'au vendredi : c'est la clé « on » utilisée par la séance des fonds.
-function rpToBankFriday(timestamp) {
+// puis recul jusqu'au dimanche : c'est la clé « on » utilisée par la séance des fonds.
+function rpToBankSunday(timestamp) {
   const parsed = new Date(timestamp);
   if (!timestamp || Number.isNaN(parsed.getTime())) return '';
   const noon = new Date(parsed.getTime() + 12 * 3600 * 1000);
   const year = noon.getUTCFullYear();
   const real = new Date(Date.UTC(year >= 2000 ? year : year - 1904 + 2026, noon.getUTCMonth(), noon.getUTCDate(), 12));
   if (Number.isNaN(real.getTime())) return '';
-  const back = (real.getUTCDay() - 5 + 7) % 7;
-  real.setUTCDate(real.getUTCDate() - back);
+  real.setUTCDate(real.getUTCDate() - real.getUTCDay());
   return real.toISOString().slice(0, 10);
 }
+const rpToBankFriday = rpToBankSunday;
 
 // Date affichée dans un pied de page ou un texte (JJ/MM/AAAA, année RP possible) -> ISO registre.
 function noticeDateToIso(text) {
@@ -85,7 +85,7 @@ function parseEmbed(embed) {
     result_percent: percent,
     capital_before: round2(before),
     capital_after: round2(after),
-    date: rpToBankFriday(embed.timestamp)
+    date: rpToBankSunday(embed.timestamp)
   };
 }
 
@@ -411,6 +411,7 @@ module.exports = {
   parseMovementEmbed,
   parseThread,
   parseNumber,
+  rpToBankSunday,
   rpToBankFriday,
   statusFromThread,
   diffFund,

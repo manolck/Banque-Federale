@@ -223,25 +223,26 @@ for (const nom of engine.PALIERS) {
 }
 const credited = market.applyFund(
   { status: 'ouvert', tier: 'Palier I', amount: 1000, capital_balance: 1000, statements: [] },
-  '2026-10-30',
+  '2026-11-01',
   { I: { final: 2.1, regime: 'stable', label: 'Marché calme' } }
 );
 assert.strictEqual(credited.capital_balance, 1021);
 assert.strictEqual(credited.statements[0].result_percent, 2.1);
-assert.strictEqual(market.applyFund({ ...credited, status: 'ouvert', tier: 'Palier I' }, '2026-10-30', { I: { final: 9, regime: 'stable', label: 'Marché calme' } }), null);
-assert.strictEqual(market.applyFund({ status: 'pause', tier: 'Palier I', capital_balance: 1000 }, '2026-10-30', { I: { final: 2.1, regime: 'stable', label: 'Marché calme' } }), null);
-assert.strictEqual(market.applyFund({ status: 'clos', tier: 'Palier II', capital_balance: 1000 }, '2026-10-30', { II: { final: 3, regime: 'stable', label: 'Marché calme' } }), null);
-const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_balance: 1000, statements: [] }, '2026-10-30', { III: { final: -3, regime: 'krach', label: 'Panique sur les marchés' } });
+assert.strictEqual(market.applyFund({ ...credited, status: 'ouvert', tier: 'Palier I' }, '2026-11-01', { I: { final: 9, regime: 'stable', label: 'Marché calme' } }), null);
+assert.strictEqual(market.applyFund({ status: 'pause', tier: 'Palier I', capital_balance: 1000 }, '2026-11-01', { I: { final: 2.1, regime: 'stable', label: 'Marché calme' } }), null);
+assert.strictEqual(market.applyFund({ status: 'clos', tier: 'Palier II', capital_balance: 1000 }, '2026-11-01', { II: { final: 3, regime: 'stable', label: 'Marché calme' } }), null);
+const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_balance: 1000, statements: [] }, '2026-11-01', { III: { final: -3, regime: 'krach', label: 'Panique sur les marchés' } });
 assert.strictEqual(lost.capital_balance, 970);
 const tuesday = new Date('2026-10-27T19:00:00Z');
-const fridayMorning = new Date('2026-10-30T15:00:00Z');
-const fridayEvening = new Date('2026-10-30T17:00:00Z');
-assert.strictEqual(market.upcomingFriday(tuesday), '2026-10-30');
-assert.strictEqual(market.slotReached(fridayMorning, '2026-10-30'), false);
-assert.strictEqual(market.slotReached(fridayEvening, '2026-10-30'), true);
-assert.strictEqual(market.dueFriday(market.initialMarket(tuesday), tuesday), '');
-assert.strictEqual(market.dueFriday({ next: '2026-10-30' }, fridayEvening), '2026-10-30');
-assert.strictEqual(market.dueFriday({ next: '2026-10-30' }, new Date('2026-10-31T12:00:00Z')), '2026-10-30');
+const sundayMorning = new Date('2026-11-01T15:00:00Z');
+const sundayEvening = new Date('2026-11-01T17:00:00Z');
+assert.strictEqual(market.upcomingSunday(tuesday), '2026-11-01');
+assert.strictEqual(market.slotReached(sundayMorning, '2026-11-01'), false);
+assert.strictEqual(market.slotReached(sundayEvening, '2026-11-01'), true);
+assert.strictEqual(market.dueSunday(market.initialMarket(tuesday), tuesday), '');
+assert.strictEqual(market.dueSunday({ next: '2026-11-01' }, sundayEvening), '2026-11-01');
+assert.strictEqual(market.dueSunday({ next: '2026-11-01' }, new Date('2026-11-02T12:00:00Z')), '2026-11-01');
+assert.strictEqual(market.present({ next: '2026-10-30', weeks: {} }, tuesday).next, '2026-11-01');
 const calm = engine.issueSemaine('I', engine.etatInitial());
 assert.ok(Math.abs(calm.hausse + calm.baisse + calm.neutre - 1) < 1e-9);
 assert.ok(calm.hausse > calm.baisse);
@@ -250,7 +251,7 @@ assert.strictEqual(guardedIssue.baisse, 0);
 assert.ok(guardedIssue.hausse > guardedIssue.neutre);
 const sameStreak = { I: { regime: 'stable', serie: 2 }, II: { regime: 'stable', serie: 2 }, III: { regime: 'expansion', serie: 2 } };
 const board = market.marketEmbed({
-  on: '2026-10-30',
+  on: '2026-11-01',
   results: { I: { final: -3 }, II: { final: -5 }, III: { final: -9.5 } },
   avant: sameStreak,
   apres: { I: engine.etatInitial(), II: engine.etatInitial(), III: engine.etatInitial() }
@@ -284,8 +285,10 @@ assert.strictEqual(board.fields[6].name, 'Contexte marché');
 assert.strictEqual(board.fields[6].value, "2 semaines de hausse d'affilée avant ce tirage.");
 assert.ok(board.footer.text.includes('perte partielle ou totale'));
 assert.ok(board.footer.text.includes('30/10/1904 18:00'));
+assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-01'), '30/10/1904');
+assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-08'), '06/11/1904');
 const split = market.marketEmbed({
-  on: '2026-10-30',
+  on: '2026-11-01',
   results: { I: { final: 1 }, II: { final: -1 }, III: { final: 0 } },
   avant: { I: { serie: 2 }, II: { serie: -1 }, III: { serie: 0 } },
   apres: sameStreak

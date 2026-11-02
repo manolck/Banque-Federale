@@ -17,6 +17,14 @@ function bfDate(value) {
   const iso = bfRpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || '');
 }
+function bfMarketDate(value) {
+  const iso = bfRpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return bfDate(value);
+  const date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12));
+  if (Number.isNaN(date.getTime())) return bfDate(value);
+  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
+  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
+}
 function bfAddDays(iso, days) {
   const date = new Date(`${String(iso || '').slice(0, 10)}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) return '';
@@ -62,7 +70,7 @@ function MarketBoard({ market }) {
   const names = ['I', 'II', 'III'];
   const ready = market.paliers;
   return <div className="bvh-ledger" style={{ marginBottom: 16 }}>
-    <div className="bvh-ledger-title">Séance du vendredi, 18 h</div>
+    <div className="bvh-ledger-title">Séance du dimanche, 18 h</div>
     <div className="bvh-market">
       {names.map((nom) => {
         const item = ready ? market.paliers[nom] : null;
@@ -72,9 +80,9 @@ function MarketBoard({ market }) {
             ? <>
               <strong className={fundTone(item.result)}>{fundResult(item.result)}</strong>
               <span>{item.label || '—'}</span>
-              <span>{bfDate(market.on)} · {item.dossiers} dossier{item.dossiers > 1 ? 's' : ''} ouvert{item.dossiers > 1 ? 's' : ''}</span>
+              <span>{bfMarketDate(market.on)} · {item.dossiers} dossier{item.dossiers > 1 ? 's' : ''} ouvert{item.dossiers > 1 ? 's' : ''}</span>
             </>
-            : <span>Premier relevé le {bfDate(market && market.next)} à 18 h</span>}
+            : <span>Premier relevé le {bfMarketDate(market && market.next)} à 18 h</span>}
         </article>;
       })}
     </div>
@@ -100,7 +108,7 @@ function FundStatements({ statements, deposits, withdrawals }) {
       <span>Date</span><span>Résultat</span><span>Capital avant</span><span>Capital après</span><span>Virement net</span><span>Taxe</span>
     </div>
     {lines.map((item, index) => <div className="bvh-statement" key={`${item.kind}-${item.on || 'releve'}-${index}`}>
-      <b data-label="Date">{bfDate(item.on)}</b>
+      <b data-label="Date">{item.kind === 'statement' || item.market ? bfMarketDate(item.on) : bfDate(item.on)}</b>
       {item.kind === 'deposit'
         ? <span className="deposit" data-label="Résultat">{`Dépôt ${bfFr(item.amount)}`}</span>
         : item.kind === 'withdrawal'
@@ -548,7 +556,7 @@ function dossierSides(service, row) {
   const position = service === 'speculative_funds' ? bfFundPosition(row) : null;
   if (service === 'speculative_funds') {
     return {
-      left: [['Palier', row.tier || '—'], ['Dernière séance', latestMarketStatement(row) ? `${bfDate(latestMarketStatement(row).on)} · ${fundResult(latestMarketStatement(row).result_percent)}` : '—'], ['Régime', (latestMarketStatement(row) && latestMarketStatement(row).regime_label) || '—'], ['Distribution', row.profit_distribution || '—'], ['Origine des fonds', row.funds_origin || '—'], ['Souscription', bfDate(row.signed_on)]],
+      left: [['Palier', row.tier || '—'], ['Dernière séance', latestMarketStatement(row) ? `${bfMarketDate(latestMarketStatement(row).on)} · ${fundResult(latestMarketStatement(row).result_percent)}` : '—'], ['Régime', (latestMarketStatement(row) && latestMarketStatement(row).regime_label) || '—'], ['Distribution', row.profit_distribution || '—'], ['Origine des fonds', row.funds_origin || '—'], ['Souscription', bfDate(row.signed_on)]],
       right: [['Souscrit', bfFr(row.amount), '#f3d58a'], ['Capital', row.capital_balance == null ? '—' : bfFr(row.capital_balance), '#f3d58a'], ['Sommes versées', bfFr(position.basis)], ['Bénéfice', bfFr(position.profit), '#74d59d']]
     };
   }
@@ -852,7 +860,7 @@ const BF_SERVICES = {
   speculative_funds: {
     route: 'speculative_funds', title: 'Fonds spéculatifs', kicker: 'Souscription', create: '+ Nouvelle souscription', clientMode: 'fonds',
     blank: () => ({ civility: 'Monsieur', tier: 'Palier I', own_account: true, declare_risks: false, declare_past: false, declare_accuracy: false, declare_terms: false }),
-    preview: (form) => ({ 'Résultat hebdomadaire': 'Tirage du palier, chaque vendredi à 18 h', Palier: form.tier || '', 'Montant souscrit': bfFr(form.amount) }),
+    preview: (form) => ({ 'Résultat hebdomadaire': 'Tirage du palier, chaque dimanche à 18 h', Palier: form.tier || '', 'Montant souscrit': bfFr(form.amount) }),
     payload: (form) => form,
     form: (form, setForm) => {
       const { Inp, Select } = bfKit();
