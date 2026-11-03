@@ -48,9 +48,8 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       if(!['active','payments_complete','placed'].includes(c.status))return json(res,409,{error:'Versements bloqués pour ce statut.'});
       const number=Number(b.installment_number),payments=[...(c.payments||[])],i=payments.findIndex(p=>Number(p.number)===number);
       if(i<0)return json(res,400,{error:'Échéance invalide.'});if(payments[i].status==='paid')return json(res,409,{error:'Échéance déjà payée.'});
-      payments[i]={...payments[i],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor};patch.payments=payments;patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active';details={installment_number:number,amount:payments[i].amount};
-    }else if(action==='leave_placed'){
-      if(!['payments_complete','placed'].includes(c.status))return json(res,409,{error:'Les huit versements doivent être terminés.'});patch.status='placed';
+      payments[i]={...payments[i],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor};patch.payments=payments;patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active';
+      const fin=financials({...c,payments});details={installment_number:number,amount:payments[i].amount,week_interest:fin.last_interest,interest_total:fin.interest,balance:fin.balance};
     }else if(action==='request_closure'){
       if(!['active','payments_complete','placed'].includes(c.status))return json(res,409,{error:'Clôture impossible pour ce statut.'});const f=financials(c),fee=money(f.balance*.15);patch.status='closure_requested';patch.closure_fee=fee;patch.closure_net_amount=money(f.balance-fee);details={...f,fee,net:patch.closure_net_amount};
     }else if(action==='confirm_closure'){

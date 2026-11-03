@@ -58,8 +58,8 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     if(!CAPITALS.has(capital)||!start||!clean(b.subscriber_first_name)||!clean(b.subscriber_last_name)||!clean(b.beneficiary_first_name)||!clean(b.beneficiary_last_name))
       return json(res,400,{error:'Contrat incomplet ou palier invalide.'});
     const enrollment=b.enrollment&&typeof b.enrollment==='object'?b.enrollment:{};
-    if(!clean(enrollment.bailiff)||!enrollment.subscriber_present||!enrollment.beneficiary_present||!enrollment.funds_coherent)
-      return json(res,400,{error:'La validation, l’huissier et les trois vérifications du banquier sont obligatoires.'});
+    if(!clean(enrollment.bailiff)||!enrollment.subscriber_present||!enrollment.funds_coherent)
+      return json(res,400,{error:'La validation, l’huissier, la présence du souscripteur et l’origine des fonds sont obligatoires.'});
     const agency=safeAgency(b.agency);
     const payments=schedule(capital,start);
     if(enrollment.first_payment_at_signature){
@@ -110,9 +110,9 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       const number=Number(b.installment_number),payments=[...(current.payments||[])],index=payments.findIndex(p=>Number(p.number)===number);
       if(index<0)return json(res,400,{error:'Échéance invalide.'}); if(payments[index].status==='paid')return json(res,409,{error:'Cette échéance est déjà payée.'});
       payments[index]={...payments[index],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor.username};
-      patch.payments=payments; patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active'; const fin=require('./money').lifeFinancials(payments); details={installment_number:number,amount:payments[index].amount,interest:fin.last_interest};
-    }else if(action==='leave_placed'){
-      if(!['payments_complete','placed'].includes(current.status))return json(res,409,{error:'Les huit versements doivent être terminés.'}); patch.status='placed';
+      patch.payments=payments; patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active';
+      const fin=require('./money').lifeFinancials(payments);
+      details={installment_number:number,amount:payments[index].amount,week_interest:fin.last_interest,interest_total:fin.interest,balance:fin.balance};
     }else if(action==='request_closure'){
       if(!ACTIVE.has(current.status))return json(res,409,{error:'Ce contrat ne peut pas être clôturé volontairement.'});
       const f=financials(current),fee=money(f.balance*0.15);patch.status='closure_requested';patch.closure_fee=fee;patch.closure_net_amount=money(f.balance-fee);details={...f,fee,net:patch.closure_net_amount};

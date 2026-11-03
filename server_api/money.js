@@ -207,14 +207,22 @@ function lifeDay(value) {
   return validDate(raw) ? raw : '';
 }
 
+function asRpDay(value, now = new Date()) {
+  if (value instanceof Date) return rpIso(civilToday(value)) || rpToday(value);
+  const raw = lifeDay(value);
+  if (raw) return rpIso(raw) || raw;
+  return rpIso(civilToday(now)) || rpToday(now);
+}
+
 function lifeFinancials(payments, now = new Date()) {
   // Chaque semaine : d'abord l'ajout des fonds du jour, puis 5 % sur le solde.
   // Ex. 2ᵉ échéance : (125 × 1,05 + 125) × 1,05.
+  // Les horodatages civils (2026…) sont ramenés au calendrier RP (1904…).
   const paid = (Array.isArray(payments) ? payments : [])
     .filter((payment) => payment && payment.status === 'paid')
     .map((payment, index) => ({
       amount: money(payment.amount),
-      at: payment.paid_at ? String(payment.paid_at).slice(0, 10) : '',
+      at: payment.paid_at ? asRpDay(String(payment.paid_at).slice(0, 10)) : '',
       number: Number(payment.number) || (index + 1)
     }))
     .filter((payment) => payment.at && validDate(payment.at))
@@ -234,7 +242,7 @@ function lifeFinancials(payments, now = new Date()) {
     };
   }
 
-  const asOf = lifeDay(now) || civilToday();
+  const asOf = asRpDay(now);
   let balance = 0;
   let principal = 0;
   let lastInterest = 0;
@@ -277,7 +285,7 @@ function lifePaymentsComplete(row) {
 function lifeLastPaidOn(row) {
   const paid = (Array.isArray(row && row.payments) ? row.payments : [])
     .filter((payment) => payment && payment.status === 'paid' && payment.paid_at)
-    .map((payment) => String(payment.paid_at).slice(0, 10))
+    .map((payment) => asRpDay(String(payment.paid_at).slice(0, 10)))
     .sort();
   return paid.length ? paid[paid.length - 1] : '';
 }
@@ -301,12 +309,36 @@ function fundCapital(row) {
   return money(row.amount);
 }
 
+function fundWithdrawals(row) {
+  if (Array.isArray(row && row.withdrawals) && row.withdrawals.length) return row.withdrawals;
+  return row && row.withdrawal ? [row.withdrawal] : [];
+}
+
+function fundContributed(row) {
+  if (!row) return 0;
+  const added = (Array.isArray(row.deposits) ? row.deposits : []).reduce((sum, item) => sum + money(item && item.amount), 0);
+  return money(money(row.amount) + added);
+}
+
+function fundWithdrawnTotal(row) {
+  if (row && row.withdrawn_total != null && row.withdrawn_total !== '') return money(row.withdrawn_total);
+  return money(fundWithdrawals(row).reduce((sum, item) => sum + money(item && item.amount), 0));
+}
+
+function fundWithdrawnBasis(row) {
+  const list = fundWithdrawals(row);
+  if (!list.length) return 0;
+  const tracked = list.every((item) => item && item.basis_out != null && item.basis_out !== '');
+  if (tracked) return money(list.reduce((sum, item) => sum + money(item.basis_out), 0));
+  // Anciens dossiers sans basis_out : on considère d'abord le retour du capital versé.
+  return money(Math.min(fundContributed(row), fundWithdrawnTotal(row)));
+}
+
 function fundCostBasis(row) {
   if (!row) return 0;
   if (row.cost_basis != null && row.cost_basis !== '') return money(row.cost_basis);
   if (!(fundCapital(row) > 0)) return 0;
-  const added = (Array.isArray(row.deposits) ? row.deposits : []).reduce((sum, item) => sum + money(item && item.amount), 0);
-  return money(money(row.amount) + added);
+  return money(Math.max(0, fundContributed(row) - fundWithdrawnBasis(row)));
 }
 
 function fundDepositQuote(row, gross) {
@@ -317,7 +349,9 @@ function fundDepositQuote(row, gross) {
     amount,
     capital_before: capital,
     capital_after: money(capital + amount),
-    cost_basis: money(fundCostBasis(row) + amount)
+    cost_basis: money(fundCostBasis(row) + amount),
+    contributed: money(fundContributed(row) + amount),
+    withdrawn_total: fundWithdrawnTotal(row)
   };
 }
 
@@ -327,6 +361,9 @@ function fundWithdrawalQuote(row, gross) {
   if (!(amount > 0)) return { error: 'Le montant du retrait est obligatoire.' };
   if (amount > capital) return { error: 'Le retrait dépasse le capital.' };
   const basis = fundCostBasis(row);
+  const contributed = fundContributed(row);
+  const withdrawnBefore = fundWithdrawnTotal(row);
+  // Seule la part au-dessus du capital versé encore présent est taxée (pro-rata du solde).
   const share = capital ? amount / capital : 0;
   const basisOut = money(basis * share);
   const profit = money(Math.max(0, amount - basisOut));
@@ -336,9 +373,13 @@ function fundWithdrawalQuote(row, gross) {
     profit,
     tax,
     net: money(amount - tax),
+    basis_out: basisOut,
     capital_before: capital,
     capital_after: money(capital - amount),
-    cost_basis: money(basis - basisOut)
+    cost_basis: money(basis - basisOut),
+    contributed,
+    withdrawn_before: withdrawnBefore,
+    withdrawn_total: money(withdrawnBefore + amount)
   };
 }
 
@@ -346,6 +387,6 @@ module.exports = {
   money, moneyFr, dateFr, marketDateFr, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
   TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
-  lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, civilToday, completedWeeks, growLifeDeposit,
-  fundCapital, fundCostBasis, fundDepositQuote, fundWithdrawalQuote
+  lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, civilToday, completedWeeks, growLifeDeposit,
+  fundCapital, fundCostBasis, fundContributed, fundWithdrawnTotal, fundWithdrawals, fundDepositQuote, fundWithdrawalQuote
 };

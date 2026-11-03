@@ -7,6 +7,7 @@ function canDeleteService(actor) {
 const { PRODUCTS } = require('./products');
 const { discordUrlOk } = require('./discord_forms');
 const { serviceNotice, enqueueNotice } = require('./discord_actions');
+const { fundCapital } = require('./money');
 
 function createServiceRoute(name) {
   const product = PRODUCTS[name];
@@ -75,6 +76,9 @@ function createServiceRoute(name) {
         if (name === 'term_savings') return json(res, 400, { error: "Passez par le retrait anticipé ou la clôture à l'échéance." });
         patch = { paid: true, status: 'paye', paid_at: new Date().toISOString() };
       } else if (body.action === 'close') {
+        if (name === 'speculative_funds' && fundCapital(current.data) > 0) {
+          return json(res, 400, { error: 'Retire d’abord le capital restant pour clôturer le fonds.' });
+        }
         patch = { status: 'clos', closed_at: new Date().toISOString() };
       } else if (body.action === 'pause' || body.action === 'resume') {
         if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });
@@ -92,8 +96,9 @@ function createServiceRoute(name) {
       } else {
         return json(res, 400, { error: 'Action inconnue.' });
       }
-      const embed = serviceNotice(name, body.action, { ...current.data, ...patch });
-      Object.assign(patch, enqueueNotice(current.data, embed));
+      const next = { ...current.data, ...patch };
+      const embed = serviceNotice(name, body.action, next);
+      Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
       if (updated.error) return json(res, 500, { error: updated.error.message });
       await sb.from('pret_service_events').insert({ service: name, record_id: body.id, event_type: body.action || 'update', actor_username: actor.username });

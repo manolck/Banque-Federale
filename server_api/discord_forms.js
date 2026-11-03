@@ -37,6 +37,8 @@ function yesNo(value) {
 function line(label, value) {
   return `**${label} :** ${value ?? ''}`;
 }
+const SUBSCRIPTION_COLOR = 0x247174;
+
 function letterhead({ title, description, footer, color }) {
   const embed = {
     author: { name: 'Interstate Banking & Trust Company' },
@@ -121,7 +123,7 @@ function lifeEmbed(row, stamp) {
     line('Durée', '8 semaines'),
     line('Intérêt', '5 % par semaine après chaque ajout de fonds'),
     line('Retrait volontaire', '15 %'),
-    line('Après les 8 semaines', enrollment.leave_placed ? 'Capital laissé placé' : 'Capital repris'),
+    line('Après les 8 semaines', 'Capital laissé placé tant que le contrat n’est pas clôturé'),
     '',
     '**Versements**',
     line('Premier versement effectué à la signature', yesNo(enrollment.first_payment_at_signature)),
@@ -141,7 +143,7 @@ function lifeEmbed(row, stamp) {
   return {
     title: `Police d'assurance-vie — Dossier ${row.contract_number}`,
     description,
-    color: 0x1f8b4c,
+    color: SUBSCRIPTION_COLOR,
     author: { name: 'Interstate Banking & Trust Company' },
     footer: { text: `Contrat régi par les articles 1 à 4 des conditions générales de la police d'assurance-vie IB&TC. ${stamp}` }
   };
@@ -171,7 +173,11 @@ function fondsEmbed(row, stamp) {
     '**Origine des fonds**',
     line('Origine', row.funds_origin),
     line('Patrimoine total estimé', moneyFr(row.estimated_wealth)),
-    line('Investit pour son propre compte', yesNo(row.own_account)),
+    line('Investit pour un autre client', yesNo(!row.own_account)),
+    ...(!row.own_account ? [
+      line('Investissement pour le compte de', row.for_full_name || '—'),
+      line('Télégramme du compte', row.for_telegram || '—')
+    ] : []),
     line('Recommandé par un client ou partenaire', yesNo(row.recommended)),
     '',
     '**Déclarations**',
@@ -185,7 +191,7 @@ function fondsEmbed(row, stamp) {
   return {
     title: `Accusé de réception de souscription — ${row.full_name} (Dossier ${row.dossier_number})`,
     description,
-    color: 0x1f8b4c,
+    color: SUBSCRIPTION_COLOR,
     author: { name: 'Interstate Banking & Trust Company' },
     footer: { text: `Risque de perte partielle ou totale du capital. ${stamp}` }
   };
@@ -196,7 +202,8 @@ function pawnEmbed(row, stamp) {
   return letterhead({
     title: dossierTitle('Prêt sur gage', who, row.dossier_number),
     description: pawnText(row),
-    footer: `Bien saisi si le prêt n'est pas remboursé sous 7 jours. ${stamp || ''}`.trim()
+    footer: `Bien saisi si le prêt n'est pas remboursé sous 7 jours. ${stamp || ''}`.trim(),
+    color: SUBSCRIPTION_COLOR
   });
 }
 function consigneEmbed(row, stamp) {
@@ -204,36 +211,170 @@ function consigneEmbed(row, stamp) {
   return letterhead({
     title: dossierTitle('Location de consigne', who, row.dossier_number),
     description: consigneText(row),
-    footer: stamp
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
   });
 }
 function termEmbed(row, stamp) {
   return letterhead({
     title: dossierTitle('Épargne à terme', `${row.prenom || ''} ${row.nom || ''}`.trim(), row.dossier_number),
     description: termText(row),
-    footer: stamp
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
   });
 }
 function payrollEmbed(row, stamp) {
   return letterhead({
     title: dossierTitle('Gestion de paie', row.company_name, row.dossier_number),
     description: payrollText(row),
-    footer: stamp
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
   });
 }
 function goldsteinEmbed(row, stamp) {
   return letterhead({
     title: dossierTitle("Livret d'épargne Goldstein", `${row.prenom || ''} ${row.nom || ''}`.trim(), row.dossier_number),
     description: goldsteinText(row),
-    footer: stamp
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
   });
 }
+function loanBirth(row) {
+  if (validDate(row.date_naissance) || validDate(row.birth_date)) return dateFr(row.date_naissance || row.birth_date);
+  return String(row.date_naissance || row.birth_date || '');
+}
+function loanText(row) {
+  const who = `${row.prenom || ''} ${(row.nom || '').toUpperCase()}`.trim();
+  return [
+    `## DÉTAILS PERSONNELS - ${who} ##`,
+    '',
+    '**INFORMATIONS PERSONNELLES**',
+    line('Date du jour', dateFr(row.date_creation || row.signed_on)),
+    line('Votre identité', `${row.prenom || ''} ${row.nom || ''}`.trim()),
+    line('Télégramme', row.telegram),
+    line('Adresse résidentielle actuelle', row.adresse),
+    line('Date de naissance', loanBirth(row)),
+    line('Nationalité', row.nationalite || row.nationality),
+    line('État civil', row.civilite || row.civility || row.etat_civil),
+    line('Profession', row.profession),
+    line('Entreprise', row.entreprise),
+    line('Salaire hebdomadaire', row.salaire_hebdomadaire || row.salaire),
+    '',
+    '**DÉTAILS DU PRÊT**',
+    line('Dossier', row.loan_id),
+    line('Agence', AGENCY_LABELS[row.agence] || row.agence),
+    line('Somme prêtée', moneyFr(row.somme)),
+    line('Taux par échéance', `${row.taux} %`),
+    line('Total à rembourser', moneyFr(row.total_a_rembourser)),
+    line('Garanties', row.garanties),
+    ...(Array.isArray(row.echeances) ? row.echeances.map((item, index) =>
+      line(`Échéance ${index + 1}`, `${moneyFr(item.montant)} le ${dateFr(item.date)}`)
+    ) : [])
+  ].join('\n');
+}
+function loanEmbed(row, stamp) {
+  const who = `${row.prenom || ''} ${row.nom || ''}`.trim();
+  return letterhead({
+    title: dossierTitle('Prêt', who, row.loan_id),
+    description: loanText(row),
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
+  });
+}
+
+const HORSE_PARI = {
+  gagnant: 'Gagnant',
+  place: 'Placé',
+  couple: 'Couplé'
+};
+
+function horseWho(row) {
+  return `${row.client_prenom || row.prenom || ''} ${row.client_nom || row.nom || ''}`.trim();
+}
+
+function horseDate(value) {
+  if (validDate(value)) return dateFr(value);
+  return String(value || '').trim();
+}
+
+function horsePari(row) {
+  if (row.type_pari === 'autre') return row.type_pari_autre || 'Autre';
+  return HORSE_PARI[row.type_pari] || row.type_pari || '';
+}
+
+function horseText(row) {
+  const who = horseWho(row);
+  const coupons = Array.isArray(row.numeros_coupons)
+    ? row.numeros_coupons.filter(Boolean)
+    : String(row.numeros_coupons || '').split(/\n+/).map((item) => item.trim()).filter(Boolean);
+  const count = Math.max(1, Number(row.coupons_count) || coupons.length || 1);
+  const total = row.montant_total != null && row.montant_total !== ''
+    ? money(row.montant_total)
+    : 25 * count;
+  return [
+    `## DOSSIER DE CRÉDIT DE MISE HIPPIQUE — ${who.toUpperCase()} ##`,
+    '',
+    '**INFORMATIONS PERSONNELLES**',
+    line('Date du jour', horseDate(row.date_du_jour || row.signed_on)),
+    line('Identité', who),
+    line('Télégramme', row.telegram),
+    line('Adresse résidentielle actuelle', row.adresse || row.address),
+    line('Profession actuelle', row.profession),
+    line('Agence', AGENCY_LABELS[row.agence || row.agency] || row.agence || row.agency),
+    line('Dossier', row.dossier_id || row.dossier_number),
+    '',
+    '**VÉRIFICATION D’IDENTITÉ**',
+    ...accepted([
+      [row.identite_presentee, 'Pièce d’identité valide présentée'],
+      [row.photographie_ajoutee, 'Photographie du client réalisée et ajoutée au dossier']
+    ]),
+    '',
+    '**DEMANDE DE CRÉDIT DE MISE**',
+    line('Montant total emprunté', `${moneyFr(25)} x ${count} = ${moneyFr(total)}`),
+    line('Taux d’intérêt fixe', `${row.taux != null ? row.taux : 0} %`),
+    '',
+    '**INFORMATIONS SUR LE PARI HIPPIQUE**',
+    line('Date de la course', horseDate(row.date_course)),
+    line('Écurie ou cheval', row.cheval_ecurie),
+    line('Type de pari', horsePari(row)),
+    line('Bookmaker', row.bookmaker),
+    '',
+    '**COUPONS DE MISE**',
+    line('Numéros de série', coupons.length ? coupons.map((item) => `N°${item}`).join(', ') : ''),
+    ...accepted([
+      [row.coupons_enregistres, 'Coupons enregistrés dans le registre officiel'],
+      [row.numeros_verifies, 'Vérification des numéros de série effectuée']
+    ]),
+    '',
+    '**SITUATION FINANCIÈRE**',
+    line('Revenus mensuels estimés', row.revenus_mensuels),
+    line('Patrimoine déclaré', row.patrimoine),
+    line('Biens en garantie', row.garanties),
+    '',
+    '**RÉFÉRENCES**',
+    line('Recommandé', row.recommande ? 'Oui' : 'Non'),
+    ...(row.recommande ? [line('Référent', row.referent)] : []),
+    line('Autres recommandations', row.recommandations),
+    '',
+    'Remboursement immédiat après la course. Les coupons restent propriété de la banque jusqu’à leur utilisation.'
+  ].join('\n');
+}
+
+function horseEmbed(row, stamp) {
+  return letterhead({
+    title: dossierTitle('Crédit hippique', horseWho(row), row.dossier_id || row.dossier_number),
+    description: horseText(row),
+    footer: stamp,
+    color: SUBSCRIPTION_COLOR
+  });
+}
+
 function missionEmbed(row, echeance) {
   const state = stateLabel(row.agency);
   return letterhead({
     title: missionTitle(row, echeance),
     description: missionText(row, echeance).replace(new RegExp(` @${state}`, 'g'), ''),
-    color: 0x8b642c,
+    color: SUBSCRIPTION_COLOR,
     footer: 'Ordre de mission'
   });
 }
@@ -432,56 +573,68 @@ function goldsteinText(row) {
     line('Mode de versement', row.payment_mode),
     line('Identification bancaire', `N°${row.bank_id || ''}`),
     line('Premier versement', moneyFr(row.opening_amount)),
-    line('Somme restante', moneyFr(row.balance)),
-    line('Règle', '+3 % de la somme restante, toutes les deux semaines'),
+    line('Nouveau solde', moneyFr(row.balance)),
+    line('Règle', '+3 % du solde, toutes les deux semaines'),
     line('Prochaine capitalisation', dateFr(row.next_capitalization)),
     line("Intérêt de la période", moneyFr(row.period_interest)),
-    line('Somme après capitalisation', moneyFr(row.next_balance)),
+    line('Solde prévu', moneyFr(row.next_balance)),
     '',
     '**DÉCLARATIONS**',
     ...accepted([
       [row.declare_accuracy, 'Exactitude des informations'],
-      [row.declare_rule, 'Connaissance de la règle des 3 % toutes les deux semaines sur la somme restante'],
+      [row.declare_rule, 'Connaissance de la règle des 3 % toutes les deux semaines sur le solde'],
       [row.declare_terms, 'Prise de connaissance des conditions générales']
     ]),
     '',
-    "Les sommes inscrites au livret demeurent la propriété du titulaire. Toutes les deux semaines, la Interstate Banking & Trust Company porte au crédit du livret un intérêt de 3 % calculé sur la seule somme restante."
+    "Les sommes inscrites au livret demeurent la propriété du titulaire. Toutes les deux semaines, la Interstate Banking & Trust Company porte au crédit du livret un intérêt de 3 % calculé sur le seul solde."
   ].join('\n');
+}
+
+const MISSION_KINDS = {
+  pret_loans: 'Prêt',
+  pret_life_insurance_contracts: 'Assurance-vie',
+  pret_pawn_loans: 'Prêt sur gage',
+  pret_consigne_contracts: 'Location de consigne',
+  pret_term_savings: 'Épargne à terme'
+};
+
+function missionKind(echeance) {
+  return MISSION_KINDS[echeance && echeance.collection] || 'Dossier';
 }
 
 function missionText(row, echeance) {
   const state = stateLabel(row.agency);
+  const kind = missionKind(echeance);
+  const kindLower = kind.toLocaleLowerCase('fr');
   const who = `${civilityTitle(row.civility || row.enrollment && row.enrollment.subscriber_civility)} ${person(row)}`.trim();
   const number = row.contract_number || row.dossier_number || row.loan_id || row.dossier_id || row.id;
-  if (echeance.kind === 'capitalization') {
-    return [
-      `Objectif : Porter au crédit du livret, avant la capitalisation de demain, les intérêts du dossier ${number} de ${who}.`,
-      '',
-      'Missions à accomplir :',
-      '',
-      `Vérifier la somme restante du dossier ${number}.`,
-      `Porter au crédit un intérêt de 3 %, soit ${moneyFr(echeance.interest)}.`,
-      `Inscrire la nouvelle somme : ${moneyFr(echeance.nextBalance)}.`,
-      `Informer ${who} au télégramme ${row.telegram || row.subscriber_telegram || ''}.`,
-      '',
-      `Personnel autorisé : Mission exclusivement réservée aux Banquiers de ${state}. @${state}`,
-      '',
-      'Responsabilité : Le banquier prenant en charge cette mission sera responsable du crédit de cette capitalisation et de la suite portée au dossier.'
-    ].join('\n');
+  const bankName = state === 'Texas' ? 'Banque du Texas' : 'Banque de Louisiane';
+  const missions = [
+    `- Rédiger le télégramme à l'attention de ${who}.`,
+    `- L'adresser au numéro de télégramme ${row.telegram || row.subscriber_telegram || row.patron_telegram || ''}.`,
+    (echeance && echeance.collection) === 'pret_term_savings'
+      ? `- Lui signifier que la somme de ${moneyFr(echeance.amount)} lui sera versée le ${dateFr(echeance.date)}.`
+      : `- Lui signifier que la somme de ${moneyFr(echeance.amount)} est due le ${dateFr(echeance.date)}.`
+  ];
+  if ((echeance && echeance.collection) === 'pret_pawn_loans') {
+    missions.push(
+      `- Informer le client que l’objet remis en gage deviendra la propriété de la ${bankName} à compter du ${dateFr(echeance.date)}, faute de remboursement de sa dette.`
+    );
   }
+  missions.push(`- Inscrire au dossier ${number} la réponse obtenue.`);
   return [
-    `Objectif : Faire parvenir, avant l'échéance de demain, un télégramme de rappel à ${who} pour le dossier ${number}.`,
+    line('Type de dossier', kind),
+    line('Référence', number),
+    '',
+    `Objectif : Faire parvenir, avant l'échéance de demain, un télégramme de rappel à ${who} concernant son dossier de ${kindLower} (${number}).`,
     '',
     'Missions à accomplir :',
     '',
-    `Rédiger le télégramme à l'attention de ${who}.`,
-    `L'adresser au numéro de télégramme ${row.telegram || row.subscriber_telegram || row.patron_telegram || ''}.`,
-    `Lui signifier que la somme de ${moneyFr(echeance.amount)} est due le ${dateFr(echeance.date)}.`,
-    'Inscrire au dossier la réponse obtenue.',
+    ...missions,
     '',
     `Personnel autorisé : Mission exclusivement réservée aux Banquiers de ${state}. @${state}`,
     '',
-    'Responsabilité : Le banquier prenant en charge cette mission sera responsable du rappel de cette échéance et de la suite portée au dossier.'
+    `Responsabilité : Le banquier prenant en charge cette mission sera responsable du rappel de cette échéance de ${kindLower} et de la suite portée au dossier.`
   ].join('\n');
 }
 
@@ -500,8 +653,17 @@ const RECEIPT_FORUMS = {
   pret_payroll_contracts: '1519112605434904627',
   pret_life_insurance_contracts: '1532771839418564731',
   pret_pawn_loans: '1560021701427724298',
-  pret_term_savings: '1562932945193402378'
+  pret_term_savings: '1562932945193402378',
+  pret_goldstein_booklets: '1567191919782789161'
 };
+
+function receiptForumId(collection) {
+  if (collection === 'pret_goldstein_booklets') {
+    const override = String(process.env.DISCORD_GOLDSTEIN_FORUM_ID || '').trim();
+    if (override) return override;
+  }
+  return RECEIPT_FORUMS[collection];
+}
 
 function receiptAgencies(row) {
   const list = Array.isArray(row.agencies) && row.agencies.length ? row.agencies : [row.agence || row.agency];
@@ -542,6 +704,7 @@ function receiptTags(collection, row) {
     return ['Pari en cours'];
   }
   if (collection === 'pret_payroll_contracts') return ['Ouvert'];
+  if (collection === 'pret_goldstein_booklets') return ['Ouvert'];
   if (collection === 'pret_consigne_contracts') return row.dossier_offered ? ['Ouvert', 'OFFERT'] : ['Ouvert'];
   return [];
 }
@@ -586,8 +749,8 @@ function quoteGoldstein(balance, openedOn) {
 }
 
 async function rpStamp() {
-  const { data } = await sb.from('pret_bank_settings').select('*').eq('setting_key', 'bank_date').maybeSingle();
-  const date = data && validDate(data.setting_value) ? data.setting_value : '1904-06-26';
+  const { rpToday } = require('./money');
+  const date = rpToday();
   const time = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   return { date, stamp: `${dateFr(date)} ${time}` };
 }
@@ -635,7 +798,7 @@ function lifeInterestEmbed(row, statement) {
       line('Capital versé', moneyFr(statement && statement.principal)),
       line('Intérêts cumulés', moneyFr(statement && statement.interest))
     ].join('\n'),
-    footer: 'Placement en cours. Relevé automatique jusqu’à clôture du contrat.'
+    footer: 'Après la fin des versements. Relevé automatique jusqu’à clôture du contrat.'
   });
 }
 
@@ -644,7 +807,7 @@ module.exports = {
   AGENCIES, AGENCY_LABELS, CONSIGNE_BANKS, COVERAGES,
   text, requireText, requireUrl, discordUrlOk, letterhead, embedFromText,
   lifeEmbed, lifeInterestEmbed, fondsEmbed, pawnText, pawnEmbed, consigneEmbed, termEmbed, payrollEmbed, goldsteinEmbed,
-  consigneText, termText, payrollText, goldsteinText, missionText, missionTitle, missionEmbed,
-  RECEIPT_FORUMS, receiptTitle, receiptTags,
+  loanText, loanEmbed, horseText, horseEmbed, consigneText, termText, payrollText, goldsteinText, missionText, missionTitle, missionEmbed,
+  RECEIPT_FORUMS, receiptForumId, receiptTitle, receiptTags,
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein, money
 };

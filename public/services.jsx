@@ -121,12 +121,33 @@ function FundStatements({ statements, deposits, withdrawals }) {
     </div>)}
   </div>;
 }
+function bfFundWithdrawals(row) {
+  if (Array.isArray(row && row.withdrawals) && row.withdrawals.length) return row.withdrawals;
+  return row && row.withdrawal ? [row.withdrawal] : [];
+}
+function bfFundContributed(row) {
+  const added = (Array.isArray(row && row.deposits) ? row.deposits : []).reduce((sum, item) => sum + bfMoney(item && item.amount), 0);
+  return bfMoney(bfMoney(row && row.amount) + added);
+}
+function bfFundWithdrawnTotal(row) {
+  if (row && row.withdrawn_total != null && row.withdrawn_total !== '') return bfMoney(row.withdrawn_total);
+  return bfMoney(bfFundWithdrawals(row).reduce((sum, item) => sum + bfMoney(item && item.amount), 0));
+}
+function bfFundWithdrawnBasis(row) {
+  const list = bfFundWithdrawals(row);
+  if (!list.length) return 0;
+  const tracked = list.every((item) => item && item.basis_out != null && item.basis_out !== '');
+  if (tracked) return bfMoney(list.reduce((sum, item) => sum + bfMoney(item.basis_out), 0));
+  return bfMoney(Math.min(bfFundContributed(row), bfFundWithdrawnTotal(row)));
+}
 function bfFundPosition(row) {
   const capital = row && row.capital_balance != null && row.capital_balance !== '' ? bfMoney(row.capital_balance) : bfMoney(row && row.amount);
+  const contributed = bfFundContributed(row);
+  const withdrawn = bfFundWithdrawnTotal(row);
   const basis = row && row.cost_basis != null && row.cost_basis !== ''
     ? bfMoney(row.cost_basis)
-    : (capital > 0 ? bfMoney(bfMoney(row.amount) + (Array.isArray(row.deposits) ? row.deposits : []).reduce((sum, item) => sum + bfMoney(item && item.amount), 0)) : 0);
-  return { capital, basis, profit: bfMoney(Math.max(0, capital - basis)) };
+    : (capital > 0 ? bfMoney(Math.max(0, contributed - bfFundWithdrawnBasis(row))) : 0);
+  return { capital, basis, contributed, withdrawn, profit: bfMoney(Math.max(0, capital - basis)) };
 }
 function bfWithdrawalQuote(row, gross) {
   const position = bfFundPosition(row);
@@ -137,16 +158,27 @@ function bfWithdrawalQuote(row, gross) {
   const basisOut = bfMoney(position.basis * share);
   const profit = bfMoney(Math.max(0, amount - basisOut));
   const tax = bfMoney(profit * 0.15);
-  return { amount, profit, tax, net: bfMoney(amount - tax), capital_after: bfMoney(position.capital - amount) };
+  return {
+    amount,
+    profit,
+    tax,
+    net: bfMoney(amount - tax),
+    basis_out: basisOut,
+    capital_after: bfMoney(position.capital - amount),
+    cost_basis: bfMoney(position.basis - basisOut),
+    withdrawn_total: bfMoney(position.withdrawn + amount)
+  };
 }
 function fundMoveHint(row, gross) {
   const amount = bfMoney(gross);
   const position = bfFundPosition(row);
-  if (!(amount > 0)) return 'La taxe de retrait est de 15 % du bénéfice encore dans le capital. Les sommes versées ne sont pas taxées.';
+  if (!(amount > 0)) {
+    return `Taxe 15 % uniquement sur le bénéfice (au-dessus du capital versé). Versé ${bfFr(position.contributed)}, déjà retiré ${bfFr(position.withdrawn)}, capital versé restant ${bfFr(position.basis)}.`;
+  }
   const added = bfFr(bfMoney(position.capital + amount));
   const quote = bfWithdrawalQuote(row, amount);
   if (!quote || quote.error) return `Ajout : capital ${added}. ${quote && quote.error ? quote.error : ''}`;
-  return `Ajout : capital ${added}. Retrait : bénéfice ${bfFr(quote.profit)}, taxe 15 % ${quote.tax ? bfFr(quote.tax) : 'aucune'}, net ${bfFr(quote.net)}, capital restant ${bfFr(quote.capital_after)}.`;
+  return `Ajout : capital ${added}. Retrait : capital versé ${bfFr(quote.basis_out)}, bénéfice ${bfFr(quote.profit)}, taxe 15 % ${quote.tax ? bfFr(quote.tax) : 'aucune'}, net ${bfFr(quote.net)}, déjà retiré ${bfFr(quote.withdrawn_total)}, capital restant ${bfFr(quote.capital_after)}.`;
 }
 function termHint(row) {
   const fee = bfMoney(row.early_fee);
@@ -391,7 +423,7 @@ function serviceSnapshot(service, row) {
     right = bfFr(row.installment_cost || row.amount_due); rightLabel = 'Échéance';
   } else if (service === 'goldstein_booklets') {
     due = row.next_capitalization;
-    left = bfFr(row.balance); leftLabel = 'Somme restante';
+    left = bfFr(row.balance); leftLabel = 'Nouveau solde';
     right = bfFr(row.period_interest); rightLabel = 'Intérêt 3 %';
     dueCaption = 'Prochaine capitalisation';
   }
@@ -556,8 +588,24 @@ function dossierSides(service, row) {
   const position = service === 'speculative_funds' ? bfFundPosition(row) : null;
   if (service === 'speculative_funds') {
     return {
-      left: [['Palier', row.tier || '—'], ['Dernière séance', latestMarketStatement(row) ? `${bfMarketDate(latestMarketStatement(row).on)} · ${fundResult(latestMarketStatement(row).result_percent)}` : '—'], ['Régime', (latestMarketStatement(row) && latestMarketStatement(row).regime_label) || '—'], ['Distribution', row.profit_distribution || '—'], ['Origine des fonds', row.funds_origin || '—'], ['Souscription', bfDate(row.signed_on)]],
-      right: [['Souscrit', bfFr(row.amount), '#f3d58a'], ['Capital', row.capital_balance == null ? '—' : bfFr(row.capital_balance), '#f3d58a'], ['Sommes versées', bfFr(position.basis)], ['Bénéfice', bfFr(position.profit), '#74d59d']]
+      left: [
+        ['Palier', row.tier || '—'],
+        ['Dernière séance', latestMarketStatement(row) ? `${bfMarketDate(latestMarketStatement(row).on)} · ${fundResult(latestMarketStatement(row).result_percent)}` : '—'],
+        ['Régime', (latestMarketStatement(row) && latestMarketStatement(row).regime_label) || '—'],
+        ['Distribution', row.profit_distribution || '—'],
+        ['Origine des fonds', row.funds_origin || '—'],
+        ['Pour un autre client', row.own_account === false ? 'Oui' : 'Non'],
+        ...(row.own_account === false ? [['Pour le compte de', row.for_full_name || '—'], ['Télégramme du compte', row.for_telegram || '—']] : []),
+        ['Souscription', bfDate(row.signed_on)]
+      ],
+      right: [
+        ['Souscrit', bfFr(row.amount), '#f3d58a'],
+        ['Capital', row.capital_balance == null ? '—' : bfFr(row.capital_balance), '#f3d58a'],
+        ['Capital versé', bfFr(position.contributed)],
+        ['Déjà retiré', bfFr(position.withdrawn)],
+        ['Capital versé restant', bfFr(position.basis)],
+        ['Bénéfice', bfFr(position.profit), '#74d59d']
+      ]
     };
   }
   if (service === 'pawn_loans') {
@@ -586,7 +634,7 @@ function dossierSides(service, row) {
   }
   return {
     left: [['Prochaine capitalisation', bfDate(row.next_capitalization)]],
-    right: [['Somme restante', bfFr(row.balance), '#f3d58a'], ['Intérêt 3 %', bfFr(row.period_interest)], ['Solde prévu', bfFr(row.next_balance), '#74d59d']]
+    right: [['Nouveau solde', bfFr(row.balance), '#f3d58a'], ['Intérêt 3 %', bfFr(row.period_interest)], ['Solde prévu', bfFr(row.next_balance), '#74d59d']]
   };
 }
 function DueLedger({ title, rows }) {
@@ -644,6 +692,8 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const [selected, setSelected] = useState(null);
   const [busy, setBusy] = useState(false);
   const [movement, setMovement] = useState('');
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -691,7 +741,29 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     try {
       setBusy(true);
       const linked = await bfKit().ensureClient(dossierClient(form, spec.clientMode || 'person'), clients);
-      const next = linked && linked.client ? { ...form, client_id: linked.client.id } : form;
+      let next = linked && linked.client ? { ...form, client_id: linked.client.id } : form;
+      if (service === 'speculative_funds' && next.for_other_client) {
+        const parts = String(next.for_full_name || '').trim().split(/\s+/).filter(Boolean);
+        if (!next.for_client_id && parts.length < 2) throw new Error('Sélectionne l’autre client pour lequel l’investissement est fait.');
+        const forLinked = await bfKit().ensureClient({
+          id: next.for_client_id,
+          prenom: parts.slice(0, -1).join(' '),
+          nom: parts[parts.length - 1] || '',
+          telegram: next.for_telegram
+        }, clients);
+        if (forLinked && forLinked.client) {
+          next = {
+            ...next,
+            for_client_id: forLinked.client.id,
+            for_full_name: `${forLinked.client.prenom || ''} ${forLinked.client.nom || ''}`.trim() || next.for_full_name,
+            for_telegram: forLinked.client.telegram || next.for_telegram || '',
+            own_account: false
+          };
+        }
+      }
+      if (service === 'speculative_funds' && !next.for_other_client) {
+        next = { ...next, own_account: true, for_client_id: '', for_full_name: '', for_telegram: '' };
+      }
       const saved = await bfKit().api.saveService(spec.route, spec.payload(next));
       setRows([saved, ...rows.filter((row) => row.id !== saved.id)]);
       setOpen(false);
@@ -724,6 +796,22 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   async function moveFunds(action) {
     if (await act(action, { amount: movement })) setMovement('');
   }
+  function openFundWithdraw() {
+    if (!selected) return;
+    setWithdrawAmount('');
+    setWithdrawOpen(true);
+  }
+  async function confirmFundWithdraw() {
+    const max = selected ? bfFundPosition(selected).capital : 0;
+    const amount = bfMoney(withdrawAmount);
+    if (!(amount > 0)) return notify('⚠ Indique un montant à retirer.');
+    if (amount > max) return notify(`⚠ Le retrait maximum est ${bfFr(max)}.`);
+    if (await act('withdraw', { amount })) {
+      setWithdrawOpen(false);
+      setWithdrawAmount('');
+      setMovement('');
+    }
+  }
   function begin() {
     const next = spec.blank();
     const scope = agency && agency !== 'toutes' ? agency : '';
@@ -743,7 +831,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const mode = spec.clientMode || 'person';
   const formPopup = open && <FormPopup title={spec.create.replace(/^\+\s*/, '')} onClose={closeForm}>
       <ClientSelect clients={clients} value={form.client_id} label={mode === 'company' ? 'Patron existant' : 'Client existant'} onChange={(id) => setForm(fillFromClient(form, findClient(clients, id), mode))} />
-      {spec.form(form, setForm)}
+      {spec.form(form, setForm, { clients })}
       <Part title="Calcul" plain>
         {Object.entries(preview).map(([label, value]) => <div className="bvh-field" key={label}><b>{label}</b><span>{value}</span></div>)}
       </Part>
@@ -784,11 +872,60 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
         {service === 'speculative_funds' && selected.status === 'pause' && <Btn disabled={busy} onClick={() => act('resume')}>Reprendre</Btn>}
         {service === 'speculative_funds' && selected.status !== 'pause' && selected.status !== 'clos' && selected.status !== 'paye' && <Btn color="#555" disabled={busy} onClick={() => act('pause')}>Mettre en pause</Btn>}
         {service === 'speculative_funds' && selected.status !== 'clos' && selected.status !== 'paye' && <>
-          <Inp label="Montant" type="number" value={movement} onChange={(event) => setMovement(event.target.value)} />
+          <Inp label="Montant à ajouter" type="number" value={movement} onChange={(event) => setMovement(event.target.value)} />
           <Btn disabled={busy} onClick={() => moveFunds('deposit')}>Ajouter des fonds</Btn>
-          <Btn color="#8b642c" disabled={busy} onClick={() => moveFunds('withdraw')}>Retirer</Btn>
+          <Btn color="#8b642c" disabled={busy || !(bfFundPosition(selected).capital > 0)} onClick={openFundWithdraw}>Retirer</Btn>
+          {!(bfFundPosition(selected).capital > 0) && <Btn color="#555" disabled={busy} onClick={() => act('close')}>Clôturer</Btn>}
           <span style={{ flexBasis: '100%', color: '#c9a567', fontSize: 13 }}>{fundMoveHint(selected, movement)}</span>
         </>}
+        {service === 'speculative_funds' && withdrawOpen && (() => {
+          const position = bfFundPosition(selected);
+          const max = position.capital;
+          const quote = bfWithdrawalQuote(selected, withdrawAmount);
+          return <FormPopup title="Retrait de fonds" onClose={() => !busy && setWithdrawOpen(false)}>
+            <Part title="Disponible" plain>
+              <div className="bvh-field"><b>Capital retirable</b><span>{bfFr(max)}</span></div>
+              <div className="bvh-field"><b>Capital versé restant</b><span>{bfFr(position.basis)}</span></div>
+              <div className="bvh-field"><b>Bénéfice présent</b><span>{bfFr(position.profit)}</span></div>
+              <div className="bvh-field"><b>Déjà retiré</b><span>{bfFr(position.withdrawn)}</span></div>
+            </Part>
+            <Part title="Montant">
+              <Inp
+                label={`Montant (max ${bfFr(max)})`}
+                type="number"
+                min="0"
+                max={max}
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  const value = bfMoney(next);
+                  setWithdrawAmount(value > max ? String(max) : next);
+                }}
+              />
+              <Span><Btn color="#555" disabled={busy || !(max > 0)} onClick={() => setWithdrawAmount(String(max))}>Tout retirer ({bfFr(max)})</Btn></Span>
+            </Part>
+            <Part title="Calcul" plain>
+              {quote && quote.error
+                ? <div className="bvh-field"><b>Erreur</b><span>{quote.error}</span></div>
+                : quote
+                  ? <>
+                    <div className="bvh-field"><b>Dont capital versé</b><span>{bfFr(quote.basis_out)}</span></div>
+                    <div className="bvh-field"><b>Dont bénéfice</b><span>{bfFr(quote.profit)}</span></div>
+                    <div className="bvh-field"><b>Taxe 15 %</b><span>{quote.tax ? bfFr(quote.tax) : 'Aucune'}</span></div>
+                    <div className="bvh-field"><b>Net à verser</b><span>{bfFr(quote.net)}</span></div>
+                    <div className="bvh-field"><b>Capital restant</b><span>{bfFr(quote.capital_after)}</span></div>
+                  </>
+                  : <p style={{ color: '#c9a567', margin: 0 }}>Indique un montant pour voir la taxe.</p>}
+            </Part>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+              <Btn color="#555" disabled={busy} onClick={() => setWithdrawOpen(false)}>Annuler</Btn>
+              <Btn color="#8b642c" disabled={busy || !(bfMoney(withdrawAmount) > 0) || bfMoney(withdrawAmount) > max} onClick={confirmFundWithdraw}>
+                {busy ? 'Retrait…' : 'Confirmer le retrait'}
+              </Btn>
+            </div>
+          </FormPopup>;
+        })()}
         {termOpen && <>
           <Btn color="#4a9eff" disabled={busy || selected.validated} onClick={() => act('validate_dossier')}>{selected.validated ? 'Dossier validé' : 'Valider le dossier'}</Btn>
           <Btn color="#ff4444" disabled={busy} onClick={() => act('early_withdrawal')}>Retrait anticipé</Btn>
@@ -859,12 +996,34 @@ function identityFields(form, setForm, options = {}) {
 const BF_SERVICES = {
   speculative_funds: {
     route: 'speculative_funds', title: 'Fonds spéculatifs', kicker: 'Souscription', create: '+ Nouvelle souscription', clientMode: 'fonds',
-    blank: () => ({ civility: 'Monsieur', tier: 'Palier I', own_account: true, declare_risks: false, declare_past: false, declare_accuracy: false, declare_terms: false }),
-    preview: (form) => ({ 'Résultat hebdomadaire': 'Tirage du palier, chaque dimanche à 18 h', Palier: form.tier || '', 'Montant souscrit': bfFr(form.amount) }),
-    payload: (form) => form,
-    form: (form, setForm) => {
+    blank: () => ({ civility: 'Monsieur', tier: 'Palier I', own_account: true, for_other_client: false, for_client_id: '', for_full_name: '', for_telegram: '', declare_risks: false, declare_past: false, declare_accuracy: false, declare_terms: false }),
+    preview: (form) => ({
+      'Résultat hebdomadaire': 'Tirage du palier, chaque dimanche à 18 h',
+      Palier: form.tier || '',
+      'Montant souscrit': bfFr(form.amount),
+      Compte: form.for_other_client ? (form.for_full_name || 'Autre client requis') : 'Propre compte'
+    }),
+    payload: (form) => ({
+      ...form,
+      own_account: !form.for_other_client,
+      for_client_id: form.for_other_client ? form.for_client_id : '',
+      for_full_name: form.for_other_client ? form.for_full_name : '',
+      for_telegram: form.for_other_client ? form.for_telegram : ''
+    }),
+    form: (form, setForm, helpers = {}) => {
       const { Inp, Select } = bfKit();
       const on = bind(form, setForm);
+      const list = Array.isArray(helpers.clients) ? helpers.clients : [];
+      function pickForClient(id) {
+        const client = findClient(list, id);
+        if (!client) return setForm({ ...form, for_client_id: '', for_full_name: '', for_telegram: '' });
+        setForm({
+          ...form,
+          for_client_id: client.id,
+          for_full_name: `${client.prenom || ''} ${client.nom || ''}`.trim(),
+          for_telegram: client.telegram || ''
+        });
+      }
       return <>
         <Part title="Identité">
           <AgencySelect value={form.agency} onChange={on('agency')} />
@@ -885,7 +1044,19 @@ const BF_SERVICES = {
           <Inp label="Patrimoine estimé" type="number" value={form.estimated_wealth || ''} onChange={on('estimated_wealth')} />
         </Part>
         <Part title="Déclarations" plain>
-          <Flag label="Investit pour son propre compte" checked={form.own_account} onChange={(value) => setForm({ ...form, own_account: value })} />
+          <Flag label="Investit pour un autre client" checked={!!form.for_other_client} onChange={(value) => setForm({
+            ...form,
+            for_other_client: value,
+            own_account: !value,
+            ...(value ? {} : { for_client_id: '', for_full_name: '', for_telegram: '' })
+          })} />
+          {form.for_other_client && <ClientSelect
+            clients={list}
+            value={form.for_client_id}
+            section="Autre client"
+            label="Ajouter un autre client"
+            onChange={pickForClient}
+          />}
           <Flag label="Recommandé par un client ou partenaire" checked={form.recommended} onChange={(value) => setForm({ ...form, recommended: value })} />
           <Flag label="Risques reconnus" checked={form.declare_risks} onChange={(value) => setForm({ ...form, declare_risks: value })} />
           <Flag label="Performances passées non garantes" checked={form.declare_past} onChange={(value) => setForm({ ...form, declare_past: value })} />
@@ -896,7 +1067,7 @@ const BF_SERVICES = {
     }
   },
   pawn_loans: {
-    route: 'pawn_loans', title: 'Prêt sur gage', kicker: 'Bien déposé', create: '+ Nouveau gage', payable: true,
+    route: 'pawn_loans', title: 'Prêt sur gage', kicker: 'Bien déposé', create: '+ Nouveau gage', payable: true, closable: true,
     blank: () => ({ civility: 'Monsieur', rate_mode: '15' }),
     preview: (form) => {
       const rate = form.rate_mode === 'autre' ? Number(form.rate) : 15;
@@ -1078,7 +1249,7 @@ const BF_SERVICES = {
     blank: () => ({ civility: 'Monsieur', payment_mode: 'Transfert bancaire', origin: 'Revenus professionnels' }),
     preview: (form) => {
       const interest = bfMoney(Number(form.opening_amount) * 0.03);
-      return { Règle: '+3 % de la somme restante, toutes les deux semaines', 'Prochaine capitalisation': bfDate(bfAddDays(form.signed_on, 14)), 'Intérêt de la période': bfFr(interest), 'Somme après capitalisation': bfFr(bfMoney(Number(form.opening_amount) + interest)) };
+      return { Règle: '+3 % du solde, toutes les deux semaines', 'Prochaine capitalisation': bfDate(bfAddDays(form.signed_on, 14)), 'Intérêt de la période': bfFr(interest), 'Nouveau solde': bfFr(bfMoney(Number(form.opening_amount) + interest)) };
     },
     payload: (form) => form,
     form: (form, setForm) => {
@@ -1209,7 +1380,6 @@ function LifeDesk(props) {
           beneficiary_birth: form.beneficiary_birth,
           beneficiary_nationality: form.beneficiary_nationality,
           beneficiary_link: form.beneficiary_link,
-          leave_placed: !!form.leave_placed,
           first_payment_at_signature: !!form.first_payment,
           collected_today: form.collected_today,
           subscriber_present: !!form.subscriber_present,
@@ -1262,7 +1432,6 @@ function LifeDesk(props) {
         ficheLine('Prochaine échéance', next ? `${fDate(next.date)} · ${fCur(next.amount)}` : 'Terminées')
       ]}
       actions={<>
-        {selected.status === 'payments_complete' && <Btn onClick={() => act('leave_placed')}>Laisser placé</Btn>}
         <Btn color="#8b642c" onClick={() => act('request_closure')}>Demander la clôture</Btn>
         {selected.status === 'closure_requested' && <Btn color="#b94735" onClick={() => act('confirm_closure')}>Confirmer la clôture</Btn>}
         <Btn onClick={() => act('report_death')}>Signaler un décès</Btn>
@@ -1369,7 +1538,6 @@ function LifeDesk(props) {
       </Part>
       <Part title="Validation" plain>
         <Inp label="Huissier de justice fédéral" value={form.bailiff || ''} onChange={(event) => setForm({ ...form, bailiff: event.target.value })} />
-        <Flag label="Capital laissé placé après les 8 semaines" checked={form.leave_placed} onChange={(value) => setForm({ ...form, leave_placed: value })} />
         <Flag label="Premier versement effectué à la signature" checked={form.first_payment} onChange={(value) => setForm({ ...form, first_payment: value })} />
         <Flag label="Souscripteur présent" checked={form.subscriber_present} onChange={(value) => setForm({ ...form, subscriber_present: value })} />
         <Flag label="Bénéficiaire présent" checked={form.beneficiary_present} onChange={(value) => setForm({ ...form, beneficiary_present: value })} />

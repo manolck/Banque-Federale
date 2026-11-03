@@ -42,6 +42,12 @@ async function speculative(body) {
   if (!validDate(body.birth_date) || !validDate(body.signed_on)) return fail('Les dates du dossier sont obligatoires.');
   if (!flags(body, ['declare_risks', 'declare_past', 'declare_accuracy', 'declare_terms'])) return fail('Les quatre déclarations sont obligatoires.');
   if (!(Number(body.amount) > 0)) return fail('Le montant souscrit est obligatoire.');
+  const ownAccount = !!body.own_account;
+  const forClientId = safeId(body.for_client_id);
+  const forFullName = text(body.for_full_name, 160);
+  if (!ownAccount && !forClientId && !forFullName) {
+    return fail('Si l’investissement n’est pas pour son propre compte, l’autre client est obligatoire.');
+  }
   const row = {
     agency, client_id: safeId(body.client_id), tier, full_name: text(body.full_name, 160), civility: text(body.civility, 20),
     birth_date: body.birth_date, signed_on: body.signed_on, nationality: text(body.nationality, 80),
@@ -49,9 +55,17 @@ async function speculative(body) {
     objectives: text(body.objectives, 240), horizon: text(body.horizon, 120), amount: money(body.amount),
     profit_distribution: text(body.profit_distribution, 160), payment_mode: text(body.payment_mode, 80),
     bank_id: text(body.bank_id, 40), funds_origin: text(body.funds_origin, 160), estimated_wealth: money(body.estimated_wealth),
-    own_account: !!body.own_account, recommended: !!body.recommended,
+    own_account: ownAccount, recommended: !!body.recommended,
+    for_client_id: ownAccount ? null : forClientId,
+    for_full_name: ownAccount ? null : forFullName,
+    for_telegram: ownAccount ? null : text(body.for_telegram, 80) || null,
     declare_risks: true, declare_past: true, declare_accuracy: true, declare_terms: true,
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {},
+    capital_balance: money(body.amount),
+    cost_basis: money(body.amount),
+    withdrawn_total: 0,
+    deposits: [],
+    withdrawals: [],
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {},
     dossier_number: await nextSerial('pret_speculative_funds', 'dossier_number', 'HCP-')
   };
   return finish(row, 'fonds');
@@ -73,7 +87,7 @@ async function pawn(body) {
     item_description: text(body.item_description, 800), base_price: money(body.base_price), amount: money(body.amount),
     rate_mode: body.rate_mode === 'autre' ? 'autre' : '15', rate: quoted.rate, repayment: quoted.repayment,
     echeance_date: quoted.echeance_date, amount_due: quoted.repayment, paid: false,
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {}
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return finish(row, pawnEmbed);
 }
@@ -94,7 +108,7 @@ async function consigne(body) {
     stored_value: money(body.stored_value), coverage: body.coverage, access: text(body.access, 40),
     shared_names: text(body.shared_names, 240), shared_telegram: text(body.shared_telegram, 80), shared_link: text(body.shared_link, 120),
     dossier_offered: !!body.dossier_offered, ...quoted, paid: false,
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {}
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, consigneEmbed, await nextSerial('pret_consigne_contracts', 'dossier_number', 'C-'));
 }
@@ -117,7 +131,7 @@ async function term(body) {
     bank_id: text(body.bank_id, 40), weeks: Number(body.weeks), amount: money(body.amount), ...quoted,
     amount_due: quoted.maturity_amount, paid: false, dossier_number,
     declare_accuracy: true, declare_early: true, declare_silence: true, declare_record: true, declare_death: true, declare_terms: true,
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {}
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, termEmbed, dossier_number);
 }
@@ -178,7 +192,7 @@ async function payroll(body) {
     unit_fee: quoted.unit, next_due: quoted.next_due, amount_due: quoted.installment, paid: false,
     commit_accuracy: true, commit_lists: true, commit_funds: true, commit_advances: true, commit_information: true, commit_employees: true, commit_terms: true,
     control_fraud: true, control_reserve: true, control_authorities: true,
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {}
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, payrollEmbed, await nextSerial('pret_payroll_contracts', 'dossier_number', 'GP-'));
 }
@@ -200,7 +214,7 @@ async function goldstein(body) {
     bank_id: text(body.bank_id, 40), opening_amount: money(body.opening_amount), opened_on: body.signed_on,
     ...quoted, declare_accuracy: true, declare_rule: true, declare_terms: true,
     movements: [{ type: 'ouverture', amount: money(body.opening_amount), balance: quoted.balance, on: body.signed_on }],
-    discord_url: text(body.discord_url, 300), status: 'ouvert', mission_keys: {}
+    discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, goldsteinEmbed, await nextSerial('pret_goldstein_booklets', 'dossier_number', 'LEG-'));
 }
@@ -223,17 +237,39 @@ function moveFund(row, body) {
     const deposits = (Array.isArray(row.deposits) ? row.deposits : []).concat({
       on, amount: quoted.amount, capital_before: quoted.capital_before, capital_after: quoted.capital_after
     });
-    return { row: { deposits, capital_balance: quoted.capital_after, cost_basis: quoted.cost_basis } };
+    return {
+      row: {
+        deposits,
+        capital_balance: quoted.capital_after,
+        cost_basis: quoted.cost_basis,
+        withdrawn_total: quoted.withdrawn_total
+      }
+    };
   }
   if (body.action === 'withdraw') {
     const quoted = fundWithdrawalQuote(row, body.amount);
     if (quoted.error) return fail(quoted.error);
     const entry = {
-      on, amount: quoted.amount, tax: quoted.tax, net: quoted.net, profit: quoted.profit,
-      capital_before: quoted.capital_before, capital_after: quoted.capital_after
+      on,
+      amount: quoted.amount,
+      tax: quoted.tax,
+      net: quoted.net,
+      profit: quoted.profit,
+      basis_out: quoted.basis_out,
+      capital_before: quoted.capital_before,
+      capital_after: quoted.capital_after,
+      contributed: quoted.contributed,
+      withdrawn_before: quoted.withdrawn_before,
+      withdrawn_total: quoted.withdrawn_total
     };
     const withdrawals = fundHistory(row).concat(entry);
-    const patch = { withdrawals, withdrawal: entry, capital_balance: quoted.capital_after, cost_basis: quoted.cost_basis };
+    const patch = {
+      withdrawals,
+      withdrawal: entry,
+      capital_balance: quoted.capital_after,
+      cost_basis: quoted.cost_basis,
+      withdrawn_total: quoted.withdrawn_total
+    };
     if (quoted.capital_after === 0) {
       patch.status = 'clos';
       patch.closed_at = new Date().toISOString();
@@ -247,7 +283,7 @@ function moveGoldstein(row, body) {
   const amount = money(body.amount);
   if (!(amount > 0)) return fail('Le montant du mouvement est obligatoire.');
   const balance = body.action === 'withdraw' ? money(row.balance - amount) : money(row.balance + amount);
-  if (balance < 0) return fail('Le retrait dépasse la somme restante.');
+  if (balance < 0) return fail('Le retrait dépasse le solde.');
   const next = goldsteinNext(balance);
   const movements = Array.isArray(row.movements) ? row.movements.slice() : [];
   movements.push({ type: body.action, amount, balance, on: body.on || row.signed_on });

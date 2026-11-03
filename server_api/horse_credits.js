@@ -1,5 +1,5 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
-const { letterhead, rpStamp } = require('./discord_forms');
+const { horseEmbed, rpStamp } = require('./discord_forms');
 function safeClientId(v){return require('./ids').safeId(v);}
 function normalize(b, actor){
   const coupons_count = Math.max(1, Number.parseInt(b.coupons_count || 1, 10));
@@ -45,14 +45,9 @@ function normalize(b, actor){
   };
 }
 async function attachEmbed(payload){
-  if(!payload.discord_text) return payload;
   const { stamp } = await rpStamp();
-  const who = `${payload.client_prenom || ''} ${payload.client_nom || ''}`.trim();
-  payload.discord_embed = letterhead({
-    title: `Crédit hippique — ${who}${payload.dossier_id ? ` — Dossier ${payload.dossier_id}` : ''}`,
-    description: payload.discord_text,
-    footer: stamp
-  });
+  payload.discord_embed = horseEmbed(payload, stamp);
+  payload.discord_text = payload.discord_embed.description || '';
   return payload;
 }
 module.exports = (req,res)=>handler(req,res, async()=>{

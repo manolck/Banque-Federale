@@ -1,7 +1,7 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
 const { safeId } = require('./ids');
-const { buildSchedule, discordUrlOk, moneyFr, dateFr, rpToday } = require('./money');
-const { letterhead, rpStamp } = require('./discord_forms');
+const { buildSchedule, discordUrlOk, rpToday } = require('./money');
+const { loanEmbed, rpStamp } = require('./discord_forms');
 
 function safeClientId(v){
   return safeId(v);
@@ -151,21 +151,8 @@ async function insertLoanWithUniqueId(basePayload, bank_code){
   for(let attempt = 0; attempt < 30; attempt++){
     const loan_id = await generateLoanId(bank_code, attempt);
     const payload = { ...basePayload, loan_id, discord_receipt: true };
-    const who = `${payload.prenom} ${String(payload.nom||'').toUpperCase()}`;
-    payload.discord_text=[
-      `## DÉTAILS PERSONNELS - ${who} ##`,
-      `**Dossier :** ${loan_id}`,
-      `**Télégramme :** ${payload.telegram||''}`,
-      `**Somme prêtée :** ${moneyFr(payload.somme)}`,
-      `**Taux par échéance :** ${payload.taux} %`,
-      `**Total à rembourser :** ${moneyFr(payload.total_a_rembourser)}`,
-      ...(payload.echeances||[]).map((item,index)=>`**Échéance ${index+1} :** ${moneyFr(item.montant)} le ${dateFr(item.date)}`)
-    ].join('\n');
-    payload.discord_embed=letterhead({
-      title: `Prêt — ${who} — Dossier ${loan_id}`,
-      description: payload.discord_text,
-      footer: stamp
-    });
+    payload.discord_embed = loanEmbed(payload, stamp);
+    payload.discord_text = payload.discord_embed.description || '';
 
     const { data, error } = await sb
       .from('pret_loans')
@@ -221,18 +208,39 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     const agence = safeAgence(b.agence || b.bank_code);
     const bank_code = bankCodeFrom(agence);
 
+    const clientId = safeClientId(b.client_id);
+    let client = null;
+    if (clientId) {
+      const found = await sb.from('pret_clients').select('*').eq('id', clientId).maybeSingle();
+      if (found.error) return json(res, 500, { error: found.error.message });
+      client = found.data;
+    }
+    const pickClient = (key, alt) => {
+      const fromBody = b[key] != null && String(b[key]).trim() ? String(b[key]).trim() : '';
+      if (fromBody) return fromBody;
+      if (!client) return '';
+      const value = client[key] != null ? client[key] : (alt ? client[alt] : '');
+      return value == null ? '' : String(value).trim();
+    };
     const payload={
       bank_code,
       agence,
-      client_id:safeClientId(b.client_id),
+      client_id:clientId,
       application_id:safeApplicationId(b.application_id),
       recouvrement_status:safeRecouvrementStatus(b.recouvrement_status),
       repayment_status:safeRepaymentStatus(b.repayment_status),
       recouvrement_notes:safeText(b.recouvrement_notes),
       recouvrement_started_at:safeNullableDate(b.recouvrement_started_at),
-      nom:String(b.nom||'').trim(),
-      prenom:String(b.prenom||'').trim(),
-      telegram:String(b.telegram||'').trim(),
+      nom:String(b.nom||'').trim() || pickClient('nom'),
+      prenom:String(b.prenom||'').trim() || pickClient('prenom'),
+      telegram:String(b.telegram||'').trim() || pickClient('telegram'),
+      adresse:pickClient('adresse'),
+      civilite:pickClient('civilite'),
+      date_naissance:pickClient('date_naissance'),
+      nationalite:pickClient('nationalite'),
+      profession:pickClient('profession'),
+      entreprise:pickClient('entreprise'),
+      salaire_hebdomadaire:pickClient('salaire_hebdomadaire'),
       somme:Number(b.somme),
       taux:Number(b.taux),
       total_a_rembourser:Number(b.total_a_rembourser),
@@ -243,7 +251,8 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       date_creation:b.date_creation || rpToday(),
       discord_url:String(b.discord_url||'').trim(),
       discord_receipt:true,
-      discord_posted_at:null
+      discord_posted_at:null,
+      discord_notices:[]
     };
     const periods=parseInt(b.nb || (payload.echeances||[]).length, 10);
     const start=b.date1 || (payload.echeances[0] && payload.echeances[0].date);
@@ -304,7 +313,11 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       if(patch.discord_url !== old.discord_url) patch.discord_posted_at=null;
     }
     const { loanNotice, enqueueNotice } = require('./discord_actions');
-    Object.assign(patch, enqueueNotice({ ...old, discord_url: patch.discord_url || old.discord_url }, loanNotice(old, patch)));
+    const after = { ...old, ...patch };
+    Object.assign(patch, enqueueNotice(
+      { ...old, discord_url: after.discord_url },
+      loanNotice(old, after)
+    ));
 
     const { data, error } = await sb
       .from('pret_loans')

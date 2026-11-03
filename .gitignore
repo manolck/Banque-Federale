@@ -22,5 +22,8 @@ __pycache__/
 .venv/
 venv/
 
+# Prévisualisation Discord locale (hors dépôt)
+scripts/local/
+
 # Outils
 .vercel

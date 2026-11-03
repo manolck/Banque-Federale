@@ -19,18 +19,104 @@ const key = process.env.DISCORD_AGENDA_API_KEY || '';
 const forumId = process.env.DISCORD_MISSION_FORUM_ID || '';
 const fundsForumId = process.env.DISCORD_FUNDS_FORUM_ID || '';
 const FUNDS_FORUM_NAME = '💰・fonds-spéculatifs';
-const SCAN_EVERY_MS = 15 * 60 * 1000;
 const SCAN_CHUNK = 25;
-let lastScanAt = 0;
+
+/** Horaires Europe/Paris : daily 16h, market 18h, actualisation fonds 19h.
+ *  Les actions au clic (souscriptions / avis) restent en poll fréquent. */
+const SLOT_DAILY = { hour: 16, minute: 0, key: 'daily' };
+const SLOT_MARKET = { hour: 18, minute: 0, key: 'market' };
+const SLOT_SCAN = { hour: 19, minute: 0, key: 'scan' };
+const CLOCK_EVERY_MS = 30 * 1000;
+const REALTIME_EVERY_MS = 60 * 1000;
+
 let scanning = false;
+const ran = { daily: '', market: '', scan: '' };
+const jobBusy = { realtime: false, daily: false, market: false, scan: false };
+const inFlight = new Set();
+
+async function withJobLock(name, fn) {
+  if (jobBusy[name]) {
+    console.log(`Skip ${name} — déjà en cours`);
+    return;
+  }
+  jobBusy[name] = true;
+  try {
+    await fn();
+  } finally {
+    jobBusy[name] = false;
+  }
+}
+
+function flightKey(kind, item) {
+  if (kind === 'publication') return `publication:${item.collection}:${item.id}`;
+  if (kind === 'notice') return `notice:${item.collection}:${item.id}:${item.notice_id}`;
+  if (kind === 'mission') return `mission:${item.collection}:${item.id}:${item.key}`;
+  if (kind === 'interest') return `interest:${item.collection}:${item.id}:${item.key}`;
+  if (kind === 'market') return `market:${item.week}:${item.palier}`;
+  return `${kind}:${JSON.stringify(item && item.id)}`;
+}
+
+async function once(kind, item, fn) {
+  const key = flightKey(kind, item);
+  if (inFlight.has(key)) {
+    console.log(`Skip doublon ${key}`);
+    return;
+  }
+  inFlight.add(key);
+  try {
+    await fn();
+  } finally {
+    inFlight.delete(key);
+  }
+}
 
 function channelIdFrom(url) {
   const match = String(url || '').match(/channels\/\d+\/(\d+)/);
   return match ? match[1] : '';
 }
 
-async function api(method, body) {
-  const response = await fetch(`${apiBase}/api/discord_outbox`, {
+function parisParts(date = new Date()) {
+  const bag = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date)) {
+    if (part.type !== 'literal') bag[part.type] = part.value;
+  }
+  let hour = Number(bag.hour);
+  if (hour === 24) hour = 0;
+  return {
+    date: `${bag.year}-${bag.month}-${bag.day}`,
+    hour,
+    minute: Number(bag.minute)
+  };
+}
+
+function slotDue(parts, slot) {
+  const nowMins = parts.hour * 60 + parts.minute;
+  const target = slot.hour * 60 + slot.minute;
+  return nowMins >= target && ran[slot.key] !== parts.date;
+}
+
+function markSlot(parts, slot) {
+  ran[slot.key] = parts.date;
+}
+
+function nextSlotLabel(slot) {
+  const parts = parisParts();
+  const nowMins = parts.hour * 60 + parts.minute;
+  const target = slot.hour * 60 + slot.minute;
+  const when = nowMins < target ? 'aujourd’hui' : 'demain';
+  return `${String(slot.hour).padStart(2, '0')}:${String(slot.minute).padStart(2, '0')} (${when})`;
+}
+
+async function api(method, body, query = '') {
+  const response = await fetch(`${apiBase}/api/discord_outbox${query}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined
@@ -50,6 +136,12 @@ function tagIds(forum, names) {
 async function rolePing(guild, state) {
   const name = state === 'texas' ? 'Texas' : 'Louisiane';
   const role = guild && guild.roles.cache.find((item) => item.name.toLocaleLowerCase('fr') === name.toLocaleLowerCase('fr'));
+  return role ? `<@&${role.id}>` : `@${name}`;
+}
+
+async function rolePingNamed(guild, name) {
+  const wanted = String(name || '').toLocaleLowerCase('fr');
+  const role = guild && guild.roles.cache.find((item) => String(item.name || '').toLocaleLowerCase('fr') === wanted);
   return role ? `<@&${role.id}>` : `@${name}`;
 }
 
@@ -103,7 +195,22 @@ async function postMission(client, item) {
 async function postNotice(client, item) {
   const channel = await client.channels.fetch(channelIdFrom(item.discord_url));
   const embed = richEmbed(item.embed);
-  const message = await channel.send(embed ? { embeds: [embed] } : { content: String(item.content || '').slice(0, 1900) });
+  let content = String(item.content || '').trim();
+  if (content.includes('@')) {
+    const guild = channel.guild || (channel.guildId ? await client.guilds.fetch(channel.guildId) : null);
+    if (guild && !guild.roles.cache.size) await guild.roles.fetch();
+    for (const name of ['Réserve fédérale', 'Texas', 'Louisiane']) {
+      if (!content.includes(`@${name}`)) continue;
+      const ping = await rolePingNamed(guild, name);
+      content = content.split(`@${name}`).join(ping);
+    }
+  }
+  content = content.slice(0, 1900);
+  const message = await channel.send(
+    embed
+      ? (content ? { content, embeds: [embed] } : { embeds: [embed] })
+      : { content: content || '—' }
+  );
   await api('POST', { kind: 'notice', collection: item.collection, id: item.id, notice_id: item.notice_id, message_id: message.id });
 }
 
@@ -112,7 +219,7 @@ function marketCard(embed) {
   const title = embed.title ? String(embed.title).slice(0, 256) : '';
   const description = embed.description ? String(embed.description).slice(0, 4096) : '';
   if (!title && !description) return null;
-  const out = { color: Number.isInteger(embed.color) ? embed.color : 0x1f8b4c };
+  const out = { color: Number.isInteger(embed.color) ? embed.color : 0x9370db };
   if (title) out.title = title;
   if (description) out.description = description;
   if (Array.isArray(embed.fields) && embed.fields.length) {
@@ -179,7 +286,6 @@ async function allThreads(forum) {
   return [...found.values()];
 }
 
-// Ne garde des messages que ce que le registre sait lire : les embeds.
 async function readThread(forum, thread) {
   const tagNames = new Map((forum.availableTags || []).map((tag) => [tag.id, tag.name]));
   const messages = [];
@@ -231,45 +337,117 @@ async function scanFunds(client) {
     }
     console.log(`Forum des fonds relu : ${threads.length} fil(s), ${created} nouvel(s) écart(s).`);
   } finally {
-    lastScanAt = Date.now();
     scanning = false;
   }
 }
 
-async function maybeScan(client) {
-  const state = await syncApi('GET');
-  if (state.requested || Date.now() - lastScanAt >= SCAN_EVERY_MS) await scanFunds(client);
+async function deliverQueue(client, queue, { publications = false, notices = false, missions = false, interest = false, markets = false } = {}) {
+  if (publications) {
+    for (const item of queue.publications || []) {
+      try {
+        await once('publication', item, () => postSummary(client, item));
+      } catch (error) { console.error('Publication', item.id, error.message); }
+    }
+  }
+  if (missions) {
+    for (const item of queue.missions || []) {
+      try {
+        await once('mission', item, () => postMission(client, item));
+      } catch (error) { console.error('Mission', item.id, error.message); }
+    }
+  }
+  if (interest) {
+    for (const item of queue.interest || []) {
+      try {
+        await once('interest', item, () => postInterest(client, item));
+      } catch (error) { console.error('Intérêts', item.id, error.message); }
+    }
+  }
+  if (notices) {
+    for (const item of queue.notices || []) {
+      try {
+        await once('notice', item, () => postNotice(client, item));
+      } catch (error) { console.error('Avis', item.id, error.message); }
+    }
+  }
+  if (markets) {
+    for (const item of queue.markets || []) {
+      try {
+        await once('market', item, () => postMarket(client, item));
+      } catch (error) { console.error('Séance', item.palier, error.message); }
+    }
+  }
 }
 
-async function tick(client) {
-  const queue = await api('GET');
-  for (const item of queue.publications || []) {
-    try { await postSummary(client, item); } catch (error) { console.error('Publication', item.id, error.message); }
-  }
-  for (const item of queue.missions || []) {
-    try { await postMission(client, item); } catch (error) { console.error('Mission', item.id, error.message); }
-  }
-  for (const item of queue.interest || []) {
-    try { await postInterest(client, item); } catch (error) { console.error('Intérêts', item.id, error.message); }
-  }
-  for (const item of queue.markets || []) {
-    try { await postMarket(client, item); } catch (error) { console.error('Séance', item.palier, error.message); }
-  }
-  for (const item of queue.notices || []) {
-    try { await postNotice(client, item); } catch (error) { console.error('Avis', item.id, error.message); }
-  }
+async function runRealtime(client) {
+  await withJobLock('realtime', async () => {
+    const queue = await api('GET', undefined, '?job=realtime');
+    await deliverQueue(client, queue, { publications: true, notices: true });
+  });
 }
 
-// MessageContent est une intention privilégiée : à activer dans le portail développeur Discord (Bot).
+async function runDaily(client) {
+  await withJobLock('daily', async () => {
+    console.log(`[${parisParts().date} 16:00 Paris] Job daily — missions, intérêts, automatisations`);
+    const queue = await api('GET', undefined, '?job=daily');
+    await deliverQueue(client, queue, { missions: true, interest: true, notices: true });
+    console.log(
+      `Daily OK — ${ (queue.missions || []).length } mission(s), ${ (queue.interest || []).length } intérêt(s), ${ (queue.notices || []).length } avis auto`
+    );
+  });
+}
+
+async function runMarket(client) {
+  await withJobLock('market', async () => {
+    console.log(`[${parisParts().date} 18:00 Paris] Job market — séance fonds spéculatifs`);
+    const queue = await api('GET', undefined, '?job=market');
+    await deliverQueue(client, queue, { markets: true });
+    console.log(`Market OK — ${ (queue.markets || []).length } relevé(s)`);
+  });
+}
+
+async function runScan(client) {
+  await withJobLock('scan', async () => {
+    console.log(`[${parisParts().date} 19:00 Paris] Actualisation forum fonds`);
+    await scanFunds(client);
+  });
+}
+
+function armSchedule(client) {
+  console.log('Planning Europe/Paris :');
+  console.log('  · poll ~1 min — souscriptions + avis au clic');
+  console.log(`  · 16:00 daily (prochain créneau ${nextSlotLabel(SLOT_DAILY)})`);
+  console.log(`  · 18:00 market fonds (prochain créneau ${nextSlotLabel(SLOT_MARKET)})`);
+  console.log(`  · 19:00 actualisation forum fonds (prochain créneau ${nextSlotLabel(SLOT_SCAN)})`);
+
+  const pulse = () => {
+    const parts = parisParts();
+    if (slotDue(parts, SLOT_DAILY)) {
+      markSlot(parts, SLOT_DAILY);
+      runDaily(client).catch((error) => console.error('Daily', error.message || error));
+    }
+    if (slotDue(parts, SLOT_MARKET)) {
+      markSlot(parts, SLOT_MARKET);
+      runMarket(client).catch((error) => console.error('Market', error.message || error));
+    }
+    if (slotDue(parts, SLOT_SCAN)) {
+      markSlot(parts, SLOT_SCAN);
+      runScan(client).catch((error) => console.error('Scan fonds', error.message || error));
+    }
+  };
+
+  const realtime = () => runRealtime(client).catch((error) => console.error('Realtime', error.message || error));
+
+  realtime();
+  pulse();
+  setInterval(realtime, REALTIME_EVERY_MS);
+  setInterval(pulse, CLOCK_EVERY_MS);
+}
+
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 client.once('clientReady', () => {
   console.log(`Banque Fédérale connectée en tant que ${client.user.tag}`);
-  const run = () => tick(client).catch((error) => console.error(error.message));
-  const forum = () => maybeScan(client).catch((error) => console.error('Forum des fonds', error.message));
-  run();
-  forum();
-  setInterval(run, 60 * 1000);
-  setInterval(forum, 60 * 1000);
+  armSchedule(client);
 });
 
 if (!process.env.DISCORD_BOT_TOKEN) {

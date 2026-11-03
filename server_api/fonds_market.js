@@ -194,7 +194,7 @@ function marketEmbed(week) {
   const when = marketDateFr(board.on);
   return {
     title: 'Haussmann Capital Partners',
-    color: 0x1f8b4c,
+    color: 0x9370db,
     description: [
       'Publication hebdomadaire des résultats des fonds spéculatifs opérés par Haussmann Asset Management.',
       'Ces résultats s\'appliquent automatiquement au relevé de chaque client selon son palier.'
