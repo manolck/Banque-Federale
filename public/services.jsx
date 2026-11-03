@@ -121,6 +121,49 @@ function FundStatements({ statements, deposits, withdrawals }) {
     </div>)}
   </div>;
 }
+function goldsteinMoveLabel(type) {
+  const key = String(type || '').toLowerCase();
+  if (key === 'ouverture') return 'Ouverture';
+  if (key === 'deposit') return 'Versement';
+  if (key === 'withdraw') return 'Retrait';
+  if (key === 'capitalisation') return 'Capitalisation';
+  return type || 'Mouvement';
+}
+function goldsteinMoveTone(type) {
+  const key = String(type || '').toLowerCase();
+  if (key === 'withdraw') return 'withdrawal';
+  if (key === 'capitalisation') return 'gain';
+  return 'deposit';
+}
+function goldsteinMoveAmount(item) {
+  const amount = bfMoney(item && item.amount);
+  const key = String((item && item.type) || '').toLowerCase();
+  if (key === 'withdraw') return `−${bfFr(amount)}`;
+  if (key === 'capitalisation') return `+${bfFr(amount)}`;
+  return bfFr(amount);
+}
+function GoldsteinMovements({ movements }) {
+  const list = Array.isArray(movements) ? movements : [];
+  if (!list.length) return null;
+  return <div className="bvh-ledger" style={{ marginTop: 16 }}>
+    <div className="bvh-ledger-title">Mouvements</div>
+    <div className="bvh-statement bvh-statement-goldstein bvh-statement-head">
+      <span>Date</span><span>Type</span><span>Montant</span><span>Solde avant</span><span>Nouveau solde</span>
+    </div>
+    {list.map((item, index) => {
+      const before = item.balance_before != null && item.balance_before !== ''
+        ? bfMoney(item.balance_before)
+        : (index > 0 && list[index - 1].balance != null ? bfMoney(list[index - 1].balance) : null);
+      return <div className="bvh-statement bvh-statement-goldstein" key={`${item.on || 'mouvement'}-${item.type || 'x'}-${index}`}>
+        <b data-label="Date">{bfDate(item.on)}</b>
+        <span data-label="Type">{goldsteinMoveLabel(item.type)}</span>
+        <span className={goldsteinMoveTone(item.type)} data-label="Montant">{goldsteinMoveAmount(item)}</span>
+        <span data-label="Solde avant">{before == null ? '—' : bfFr(before)}</span>
+        <span data-label="Nouveau solde">{bfFr(item.balance)}</span>
+      </div>;
+    })}
+  </div>;
+}
 function bfFundWithdrawals(row) {
   if (Array.isArray(row && row.withdrawals) && row.withdrawals.length) return row.withdrawals;
   return row && row.withdrawal ? [row.withdrawal] : [];
@@ -938,16 +981,14 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
         {spec.payable && selected.status !== 'paye' && selected.status !== 'clos' && selected.status !== 'pause' && <Btn onClick={() => act('mark_paid')}>Valider paiement</Btn>}
         {spec.closable && selected.status !== 'clos' && selected.status !== 'pause' && <Btn color="#555" onClick={() => act('close')}>Clôturer</Btn>}
         {spec.savings && selected.status !== 'solde' && <>
-          <Inp label="Mouvement" type="number" value={movement} onChange={(event) => setMovement(event.target.value)} />
+          <Inp label="Montant" type="number" value={movement} onChange={(event) => setMovement(event.target.value)} />
           <Btn onClick={() => act('deposit', { amount: movement })}>Versement</Btn>
           <Btn color="#8b642c" onClick={() => act('withdraw', { amount: movement })}>Retrait</Btn>
         </>}
       </>}
     >
       {dueRows.length > 0 && <DueLedger title="Échéance" rows={dueRows} />}
-      {service === 'goldstein_booklets' && Array.isArray(selected.movements) && selected.movements.length > 0 && <div className="bvh-ledger" style={{ marginTop: 16 }}><div className="bvh-ledger-title">Mouvements</div>
-        {selected.movements.map((item, index) => <div className="bvh-reminder-row" key={`${item.on || 'mouvement'}-${index}`}><span className="bvh-reminder-number">#{index + 1}</span><b>{item.type || 'mouvement'}</b><span>{bfDate(item.on)}</span><span>{bfFr(item.amount)}</span><div className="bvh-reminder-latest"><b>Solde {bfFr(item.balance)}</b></div></div>)}
-      </div>}
+      {service === 'goldstein_booklets' && <GoldsteinMovements movements={selected.movements} />}
       {service === 'speculative_funds' && <FundStatements statements={selected.statements} deposits={selected.deposits} withdrawals={fundWithdrawals(selected)} />}
     </FicheShell>;
   }

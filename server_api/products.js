@@ -213,7 +213,7 @@ async function goldstein(body) {
     origin: text(body.origin, 80), origin_other: text(body.origin_other, 160), payment_mode: text(body.payment_mode, 40),
     bank_id: text(body.bank_id, 40), opening_amount: money(body.opening_amount), opened_on: body.signed_on,
     ...quoted, declare_accuracy: true, declare_rule: true, declare_terms: true,
-    movements: [{ type: 'ouverture', amount: money(body.opening_amount), balance: quoted.balance, on: body.signed_on }],
+    movements: [{ type: 'ouverture', amount: money(body.opening_amount), balance_before: 0, balance: quoted.balance, on: body.signed_on }],
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, goldsteinEmbed, await nextSerial('pret_goldstein_booklets', 'dossier_number', 'LEG-'));
@@ -285,8 +285,15 @@ function moveGoldstein(row, body) {
   const balance = body.action === 'withdraw' ? money(row.balance - amount) : money(row.balance + amount);
   if (balance < 0) return fail('Le retrait dépasse le solde.');
   const next = goldsteinNext(balance);
+  const before = money(row.balance);
   const movements = Array.isArray(row.movements) ? row.movements.slice() : [];
-  movements.push({ type: body.action, amount, balance, on: body.on || row.signed_on });
+  movements.push({
+    type: body.action,
+    amount,
+    balance_before: before,
+    balance,
+    on: body.on || rpToday()
+  });
   return {
     row: {
       ...row,
