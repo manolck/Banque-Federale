@@ -201,13 +201,6 @@ module.exports = (req,res)=>handler(req,res, async()=>{
 
   if(req.method==='POST'){
     const b=await readBody(req);
-    if(!b.nom || !b.prenom || !b.somme || b.taux===undefined || !b.echeances) {
-      return json(res,400,{error:'Données prêt incomplètes'});
-    }
-
-    const agence = safeAgence(b.agence || b.bank_code);
-    const bank_code = bankCodeFrom(agence);
-
     const clientId = safeClientId(b.client_id);
     let client = null;
     if (clientId) {
@@ -215,6 +208,14 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       if (found.error) return json(res, 500, { error: found.error.message });
       client = found.data;
     }
+    const companyClient = client && String(client.kind || client.client_type || '').toLowerCase() === 'entreprise';
+    if(!b.nom || (!b.prenom && !companyClient) || !b.somme || b.taux===undefined || !b.echeances) {
+      return json(res,400,{error:'Données prêt incomplètes'});
+    }
+
+    const agence = safeAgence(b.agence || b.bank_code);
+    const bank_code = bankCodeFrom(agence);
+
     const pickClient = (key, alt) => {
       const fromBody = b[key] != null && String(b[key]).trim() ? String(b[key]).trim() : '';
       if (fromBody) return fromBody;
@@ -222,6 +223,7 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       const value = client[key] != null ? client[key] : (alt ? client[alt] : '');
       return value == null ? '' : String(value).trim();
     };
+    const companyName = String(b.nom || '').trim() || pickClient('nom') || pickClient('entreprise');
     const payload={
       bank_code,
       agence,
@@ -231,16 +233,16 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       repayment_status:safeRepaymentStatus(b.repayment_status),
       recouvrement_notes:safeText(b.recouvrement_notes),
       recouvrement_started_at:safeNullableDate(b.recouvrement_started_at),
-      nom:String(b.nom||'').trim() || pickClient('nom'),
-      prenom:String(b.prenom||'').trim() || pickClient('prenom'),
+      nom:companyName,
+      prenom:companyClient ? '' : (String(b.prenom||'').trim() || pickClient('prenom')),
       telegram:String(b.telegram||'').trim() || pickClient('telegram'),
       adresse:pickClient('adresse'),
-      civilite:pickClient('civilite'),
-      date_naissance:pickClient('date_naissance'),
-      nationalite:pickClient('nationalite'),
-      profession:pickClient('profession'),
-      entreprise:pickClient('entreprise'),
-      salaire_hebdomadaire:pickClient('salaire_hebdomadaire'),
+      civilite:companyClient ? '' : pickClient('civilite'),
+      date_naissance:companyClient ? '' : pickClient('date_naissance'),
+      nationalite:companyClient ? '' : pickClient('nationalite'),
+      profession:companyClient ? '' : pickClient('profession'),
+      entreprise:companyClient ? companyName : pickClient('entreprise'),
+      salaire_hebdomadaire:companyClient ? '' : pickClient('salaire_hebdomadaire'),
       somme:Number(b.somme),
       taux:Number(b.taux),
       total_a_rembourser:Number(b.total_a_rembourser),
