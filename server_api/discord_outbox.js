@@ -23,7 +23,18 @@ function dueForMission(due, bankDate) {
   const today = asRpDay(bankDate);
   return !!day && validDate(day) && (day === addDays(today, 1) || day <= today);
 }
+function missionBlocked(row) {
+  const status = String(row.status || '').toLowerCase().trim();
+  if (['pause', 'clos', 'paye', 'solde', 'closed', 'cancelled', 'paid_to_beneficiary'].includes(status)) return true;
+  const recovery = String(row.recouvrement_status || 'aucun')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  return !!recovery && recovery !== 'aucun';
+}
 function pushMission(missions, row, echeance) {
+  if (missionBlocked(row)) return;
   const day = asRpDay(echeance.date);
   const key = `${echeance.kind || 'due'}:${day || echeance.date}:${echeance.slot || ''}`;
   const posted = row.mission_keys || {};
