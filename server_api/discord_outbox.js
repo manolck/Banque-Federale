@@ -118,6 +118,10 @@ async function claimInterestKeys(items) {
 }
 
 async function takeNotices(collection, row) {
+  if (collection === 'pret_speculative_funds') {
+    const { ensureFundDiscordUrl } = require('./fonds_forum_sync');
+    await ensureFundDiscordUrl(row);
+  }
   const { notices, rowPatch } = claimNotices(row);
   if (!rowPatch) return [];
   const saved = await sb.from(collection).update(rowPatch).eq('id', row.id);

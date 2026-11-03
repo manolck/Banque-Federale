@@ -97,6 +97,14 @@ function createServiceRoute(name) {
         return json(res, 400, { error: 'Action inconnue.' });
       }
       const next = { ...current.data, ...patch };
+      if (name === 'speculative_funds' && (body.action === 'deposit' || body.action === 'withdraw' || body.action === 'pause' || body.action === 'resume' || body.action === 'close')) {
+        const { ensureFundDiscordUrl } = require('./fonds_forum_sync');
+        await ensureFundDiscordUrl(next);
+        if (next.discord_url && next.discord_url !== current.data.discord_url) {
+          patch.discord_url = next.discord_url;
+          if (next.discord_posted_at) patch.discord_posted_at = next.discord_posted_at;
+        }
+      }
       const embed = serviceNotice(name, body.action, next);
       Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
