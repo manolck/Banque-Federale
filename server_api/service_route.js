@@ -74,7 +74,13 @@ function createServiceRoute(name) {
         patch = settled.row;
       } else if (body.action === 'mark_paid') {
         if (name === 'term_savings') return json(res, 400, { error: "Passez par le retrait anticipé ou la clôture à l'échéance." });
+        if (name === 'consigne_contracts') return json(res, 400, { error: 'Utilisez le règlement de la semaine.' });
         patch = { paid: true, status: 'paye', paid_at: new Date().toISOString() };
+      } else if (body.action === 'pay_week') {
+        if (!product.payWeek) return json(res, 400, { error: 'Ce dossier ne reçoit pas de règlement hebdomadaire.' });
+        const paid = product.payWeek(current.data);
+        if (paid.error) return json(res, 400, { error: paid.error });
+        patch = paid.row;
       } else if (body.action === 'close') {
         if (name === 'speculative_funds' && fundCapital(current.data) > 0) {
           return json(res, 400, { error: 'Retire d’abord le capital restant pour clôturer le fonds.' });

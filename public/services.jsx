@@ -670,7 +670,7 @@ function dossierSides(service, row) {
   }
   if (service === 'consigne_contracts') {
     return {
-      left: [['Couverture', row.coverage || '—'], ['Accès', row.access || '—'], ['Prochaine échéance', bfDate(row.next_due)]],
+      left: [['Couverture', row.coverage || '—'], ['Accès', row.access || '—'], ['Prochaine échéance', bfDate(row.next_due)], ['Dernier règlement', row.last_paid_on ? bfDate(row.last_paid_on) : '—']],
       right: [['Par semaine', bfFr(row.weekly_total), '#f3d58a'], ['Valeur déposée', bfFr(row.stored_value)], ['Dû aujourd’hui', bfFr(row.due_today)]]
     };
   }
@@ -910,7 +910,16 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
           pending: 'En attente'
         }]
       : service === 'consigne_contracts'
-        ? [{ key: 'echeance', number: 1, amount: bfFr(selected.weekly_total), date: bfDate(selected.next_due), state: dueStateOf(selected.next_due, closed), done: closed ? 'Échéance réglée' : '', pending: 'Location à encaisser' }]
+        ? [{
+            key: 'echeance',
+            number: 1,
+            amount: bfFr(selected.weekly_total),
+            date: bfDate(selected.next_due),
+            state: dueStateOf(selected.next_due, closed),
+            done: closed ? 'Échéance réglée' : '',
+            pending: 'Location à encaisser',
+            action: !closed ? <Btn disabled={busy} onClick={() => act('pay_week')}>Régler la semaine</Btn> : null
+          }]
         : service === 'payroll_contracts'
           ? [{ key: 'echeance', number: 1, amount: bfFr(selected.installment_cost || selected.amount_due), date: bfDate(selected.next_due), state: dueStateOf(selected.next_due, closed), done: closed ? 'Échéance réglée' : '', pending: 'Échéance à venir' }]
           : [];
@@ -923,6 +932,9 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       left={sides.left.map(([label, value]) => ficheLine(label, value))}
       right={sides.right.map(([label, value, color]) => ficheLine(label, value, color))}
       actions={<>
+        {service === 'consigne_contracts' && selected.status !== 'clos' && selected.status !== 'paye' && (
+          <Btn disabled={busy} onClick={() => act('pay_week')}>Régler la semaine ({bfFr(selected.weekly_total)})</Btn>
+        )}
         {service === 'speculative_funds' && selected.status === 'pause' && <Btn disabled={busy} onClick={() => act('resume')}>Reprendre</Btn>}
         {service === 'speculative_funds' && selected.status !== 'pause' && selected.status !== 'clos' && selected.status !== 'paye' && <Btn color="#555" disabled={busy} onClick={() => act('pause')}>Mettre en pause</Btn>}
         {service === 'speculative_funds' && selected.status !== 'clos' && selected.status !== 'paye' && <>

@@ -115,6 +115,14 @@ function serviceNotice(service, action, row) {
       'L\'objet mis en gage devient à ce jour propriété de la banque.'
     ], row);
   }
+  if (service === 'consigne_contracts' && action === 'pay_week') {
+    return notice('Règlement hebdomadaire — consigne', [
+      line('Échéance réglée', dateFr(row.last_paid_due || row.next_due)),
+      line('Montant', moneyFr(row.last_paid_amount != null ? row.last_paid_amount : row.weekly_total)),
+      line('Prochaine échéance', dateFr(row.next_due)),
+      line('Banque', CONSIGNE_BANKS[row.agency] || row.agency)
+    ], GREEN, row);
+  }
   if (service === 'consigne_contracts' && action === 'close') {
     return closureNotice('Clôture — consigne', [
       line('Banque', CONSIGNE_BANKS[row.agency] || row.agency),

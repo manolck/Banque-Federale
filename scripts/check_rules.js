@@ -225,6 +225,21 @@ assert.ok(consigneClose.title.includes('Clôture — consigne'));
 assert.ok(consigneClose.description.includes('Tout objet présent dans les coffres lors de la clôture devient propriété de la banque.'));
 assert.strictEqual(consigneClose.color, 0xff0000);
 assert.strictEqual(consigneClose.mention, '@Réserve fédérale');
+const consignePaid = require('../server_api/products').PRODUCTS.consigne_contracts.payWeek({
+  status: 'ouvert', next_due: '1904-11-03', weekly_total: 30, mission_keys: {}, payments: []
+});
+assert.strictEqual(consignePaid.row.next_due, '1904-11-10');
+assert.strictEqual(consignePaid.row.last_paid_amount, 30);
+assert.strictEqual(consignePaid.row.last_paid_due, '1904-11-03');
+assert.ok(consignePaid.row.mission_keys['due:1904-11-03:']);
+const consigneWeekNotice = require('../server_api/discord_actions').serviceNotice('consigne_contracts', 'pay_week', {
+  prenom: 'Ada', nom: 'Lovelace', dossier_number: 'C-000001', agency: 'blackwater',
+  weekly_total: 30, last_paid_due: '1904-11-03', last_paid_amount: 30, next_due: '1904-11-10'
+});
+assert.ok(consigneWeekNotice.title.includes('Règlement hebdomadaire'));
+assert.ok(consigneWeekNotice.description.includes('30'));
+assert.ok(consigneWeekNotice.description.includes('10/11/1904') || consigneWeekNotice.description.includes('11/10/1904') || consigneWeekNotice.description.includes('1904'));
+assert.strictEqual(require('../server_api/products').PRODUCTS.consigne_contracts.payWeek({ status: 'clos', next_due: '1904-11-03', weekly_total: 30 }).error, 'Ce dossier est clôturé.');
 const payrollClose = require('../server_api/discord_actions').serviceNotice('payroll_contracts', 'close', {
   company_name: 'Saloon Valentine', dossier_number: 'GP-000001'
 });

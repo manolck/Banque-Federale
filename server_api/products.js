@@ -4,7 +4,7 @@ const {
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
 } = require('./discord_forms');
-const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, termPayout, datedLike, rpToday } = require('./money');
+const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, termPayout, datedLike, rpToday, addDays, asRpDay } = require('./money');
 const { safeId } = require('./ids');
 
 function agencyOf(value) {
@@ -107,10 +107,33 @@ async function consigne(body) {
     telegram: text(body.telegram, 80), address: text(body.address, 240), signed_on: body.signed_on,
     stored_value: money(body.stored_value), coverage: body.coverage, access: text(body.access, 40),
     shared_names: text(body.shared_names, 240), shared_telegram: text(body.shared_telegram, 80), shared_link: text(body.shared_link, 120),
-    dossier_offered: !!body.dossier_offered, ...quoted, paid: false,
+    dossier_offered: !!body.dossier_offered, ...quoted, paid: false, payments: [],
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
   return withDossier(row, consigneEmbed, await nextSerial('pret_consigne_contracts', 'dossier_number', 'C-'));
+}
+
+function payConsigneWeek(row) {
+  if (row.status === 'clos' || row.status === 'paye') return fail('Ce dossier est clôturé.');
+  const due = asRpDay(row.next_due) || rpToday();
+  const next = addDays(due, 7);
+  const amount = money(row.weekly_total);
+  const payment = { on: rpToday(), due, amount, next_due: next };
+  const payments = (Array.isArray(row.payments) ? row.payments : []).concat(payment).slice(-52);
+  const keys = { ...(row.mission_keys || {}) };
+  const dueKey = `due:${due}:`;
+  if (!keys[dueKey]) keys[dueKey] = 'paid';
+  return {
+    row: {
+      next_due: next,
+      last_paid_on: payment.on,
+      last_paid_due: due,
+      last_paid_amount: amount,
+      payments,
+      mission_keys: keys
+    },
+    payment
+  };
 }
 
 async function term(body) {
@@ -309,7 +332,7 @@ function moveGoldstein(row, body) {
 const PRODUCTS = {
   speculative_funds: { collection: 'pret_speculative_funds', prepare: speculative, render: 'fonds', move: moveFund },
   pawn_loans: { collection: 'pret_pawn_loans', prepare: pawn, render: pawnEmbed, usesRecordId: true },
-  consigne_contracts: { collection: 'pret_consigne_contracts', prepare: consigne, render: consigneEmbed },
+  consigne_contracts: { collection: 'pret_consigne_contracts', prepare: consigne, render: consigneEmbed, payWeek: payConsigneWeek },
   term_savings: { collection: 'pret_term_savings', prepare: term, render: termEmbed, settle: settleTerm, validate: validateTerm },
   payroll_contracts: { collection: 'pret_payroll_contracts', prepare: payroll, render: payrollEmbed },
   goldstein_booklets: { collection: 'pret_goldstein_booklets', prepare: goldstein, render: goldsteinEmbed, move: moveGoldstein }
