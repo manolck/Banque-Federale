@@ -1508,6 +1508,7 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
   async function saveLoan(l){const u=l.id?await api.updateLoan(l):await api.addLoan(l);setLoans(l.id?loans.map(x=>x.id===u.id?u:x):[u,...loans]);notify(l.id?'Prêt modifié':'Prêt créé');return u;}
   async function deleteLoan(l){if(!confirm('Supprimer définitivement ce prêt ?'))return;await api.deleteLoan(l.id);setLoans(loans.filter(x=>x.id!==l.id));notify('Prêt supprimé');setDesk(null);}
   const canDeleteService=canOpenDirection(me);
+  const canDeleteClient=canOpenDirection(me);
   async function deleteServiceContract(group,item,ev){
     ev?.stopPropagation?.();
     if(!canDeleteService) return;
@@ -1546,7 +1547,7 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
         <Btn color="#5f4725" onClick={()=>onQuickAppointment?.(client)}>Rendez-vous</Btn>
         <Btn color="#5f4725" onClick={focusNote}>Note</Btn>
         <Btn color="#5f4725" onClick={focusDoc}>Document</Btn>
-        <Btn color={C.red} onClick={()=>onDelete(client)}>Supprimer</Btn>
+        {canDeleteClient&&<Btn color={C.red} onClick={()=>onDelete(client)}>Supprimer</Btn>}
       </div>
       <div className="vx-stats">
         <div><b>{pack.count}</b>Contrats</div>
@@ -1574,7 +1575,11 @@ function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsuran
   async function saveClient(f){try{const payload=editing?{...f,id:editing.id}:f;const c=editing?await api.updateClient(payload):await api.addClient(payload);setClients(editing?clients.map(x=>x.id===c.id?c:x):[c,...clients]);setSelectedId(c.id);setEditing(null);notify(editing?'Client modifié':'Client ajouté')}catch(e){notify('⚠ '+e.message)}}
   function add(){setEditing(null);setModal(true)}
   function edit(c){setEditing(c);setModal(true)}
-  async function del(c){if(!confirm('Supprimer '+clientFullName(c)+' ?'))return;try{await api.deleteClient(c.id);setClients(clients.filter(x=>x.id!==c.id));setSelectedId(null);notify('Client supprimé')}catch(e){notify('⚠ '+e.message)}}
+  async function del(c){
+    if(!canOpenDirection(me)) return notify('⚠ Suppression réservée au directeur, au directeur adjoint et au technicien.');
+    if(!confirm('Supprimer '+clientFullName(c)+' ?'))return;
+    try{await api.deleteClient(c.id);setClients(clients.filter(x=>x.id!==c.id));setSelectedId(null);notify('Client supprimé')}catch(e){notify('⚠ '+e.message)}
+  }
   const needle=query.trim().toLowerCase();
   const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')).toLowerCase().includes(needle)).slice().sort((a,b)=>clientFullName(a).localeCompare(clientFullName(b),'fr'));
   if(selected)return <><ClientDossier client={selected} loans={loans} setLoans={setLoans} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} appointments={appointments} clients={clients} notify={notify} me={me} activeAgence={activeAgence} onBack={()=>setSelectedId(null)} onEdit={edit} onDelete={del} onQuickAppointment={onQuickAppointment} onRefresh={onRefresh}/><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></>;

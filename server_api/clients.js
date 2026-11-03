@@ -1,4 +1,9 @@
-const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
+const { sb, json, readBody, currentUser, hasPermission, logAction, handler, roleCodeOf } = require('./_lib');
+
+const CAN_DELETE_CLIENT = new Set(['TECHNICIAN', 'DIRECTOR', 'DEPUTY_DIRECTOR']);
+function canDeleteClient(actor) {
+  return CAN_DELETE_CLIENT.has(roleCodeOf(actor));
+}
 
 const TEXT_FIELDS = [
   'nom','prenom','telegram','adresse','notes','carte_identite_url',
@@ -87,6 +92,9 @@ module.exports = (req,res)=>handler(req,res, async()=>{
   }
 
   if(req.method==='DELETE'){
+    if(!canDeleteClient(actor)) {
+      return json(res,403,{error:'Suppression réservée au directeur, au directeur adjoint et au technicien.'});
+    }
     const { id } = await readBody(req);
     if(!id) return json(res,400,{error:'ID manquant'});
 
