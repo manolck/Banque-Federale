@@ -15,10 +15,16 @@ const TEXT_FIELDS = [
 function text(value){
   return String(value ?? '').trim();
 }
+function clientKind(value){
+  return String(value || '').trim().toLowerCase() === 'entreprise' ? 'entreprise' : 'personne';
+}
 function payloadFrom(body){
   const payload={};
   for(const key of TEXT_FIELDS){
     if(body[key] !== undefined) payload[key]=text(body[key]);
+  }
+  if(body.kind !== undefined || body.client_type !== undefined) {
+    payload.kind = clientKind(body.kind || body.client_type);
   }
   if(body.a_autres_dettes !== undefined) payload.a_autres_dettes=!!body.a_autres_dettes;
   return payload;
@@ -54,7 +60,14 @@ module.exports = (req,res)=>handler(req,res, async()=>{
   if(req.method==='POST'){
     const body = await readBody(req);
     const payload=payloadFrom(body);
-    if(!payload.nom || !payload.prenom) return json(res,400,{error:'Nom et prénom requis'});
+    payload.kind = clientKind(payload.kind || body.kind || body.client_type);
+    if(payload.kind === 'entreprise'){
+      if(!payload.nom) return json(res,400,{error:"Le nom de l'entreprise est requis"});
+      payload.prenom = payload.prenom || '';
+      payload.entreprise = payload.entreprise || payload.nom;
+    }else if(!payload.nom || !payload.prenom){
+      return json(res,400,{error:'Nom et prénom requis'});
+    }
     payload.legacy_id = await nextClientNumber();
 
     const { data, error } = await sb.from('pret_clients').insert(payload).select().single();
@@ -62,7 +75,8 @@ module.exports = (req,res)=>handler(req,res, async()=>{
 
     await logAction(actor,'creation_client',{
       client_id:data.id,
-      client:`${data.prenom} ${data.nom}`
+      kind:data.kind || 'personne',
+      client:data.kind === 'entreprise' ? data.nom : `${data.prenom} ${data.nom}`
     });
     return json(res,200,data);
   }
@@ -73,6 +87,19 @@ module.exports = (req,res)=>handler(req,res, async()=>{
 
     const patch=payloadFrom(body);
     if(Object.keys(patch).length===0) return json(res,400,{error:'Aucune information à modifier'});
+    if(patch.kind === 'entreprise'){
+      if(patch.nom !== undefined && !patch.nom) return json(res,400,{error:"Le nom de l'entreprise est requis"});
+      if(patch.nom) patch.entreprise = patch.entreprise || patch.nom;
+      if(patch.prenom === undefined) patch.prenom = '';
+    }else if(patch.kind === 'personne' || patch.nom !== undefined || patch.prenom !== undefined){
+      const current = await sb.from('pret_clients').select('*').eq('id',body.id).maybeSingle();
+      if(current.error) return json(res,500,{error:current.error.message});
+      const next = { ...(current.data || {}), ...patch };
+      const kind = clientKind(next.kind);
+      if(kind !== 'entreprise' && (!next.nom || !next.prenom)) {
+        return json(res,400,{error:'Nom et prénom requis'});
+      }
+    }
 
     const { data, error } = await sb
       .from('pret_clients')
@@ -85,7 +112,8 @@ module.exports = (req,res)=>handler(req,res, async()=>{
 
     await logAction(actor,'modification_client',{
       client_id:data.id,
-      client:`${data.prenom} ${data.nom}`,
+      kind:data.kind || 'personne',
+      client:data.kind === 'entreprise' ? data.nom : `${data.prenom} ${data.nom}`,
       fields:Object.keys(patch)
     });
     return json(res,200,data);

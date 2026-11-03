@@ -1386,7 +1386,11 @@ function DocumentPanel({client,focusSignal}){
   return <div className="bvh-ledger" id={`archives-client-${client.id}`}><div className="bvh-ledger-title">Archives du dossier</div><div style={{padding:'12px 16px 0',display:'flex',gap:8,flexWrap:'wrap'}}><Btn color={mode==='file'?'#8b642c':'#555'} onClick={()=>setMode('file')}>Importer une pièce</Btn><Btn color={mode==='link'?'#8b642c':'#555'} onClick={()=>setMode('link')}>Ajouter par lien</Btn></div><div className="bvh-upload-line"><Select label="Type" value={docType} onChange={e=>setDocType(e.target.value)}><option value="portrait">Portrait</option><option value="identite">Carte d'identité</option><option value="contrat">Contrat signé</option><option value="document">Autre pièce</option></Select>{mode==='file'?<div><label style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'.1em',color:'#b69b68'}}>Fichier</label><input id={fileId} type="file" accept="image/*,.pdf" onChange={e=>setFile(e.target.files?.[0]||null)} style={{display:'block',width:'100%',marginTop:5,color:'#d8bf82',background:'#120b06',border:'1px solid #62451f',borderRadius:8,padding:8}}/></div>:<div style={{display:'grid',gridTemplateColumns:'1fr 1.5fr',gap:8}}><Inp label="Nom de la pièce" value={name} onChange={e=>setName(e.target.value)} placeholder="Carte d’identité"/><Inp label="Lien" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://..."/></div>}<Btn color="#8b642c" disabled={busy} onClick={add}>{busy?'Ajout…':'Ajouter'}</Btn></div>{err&&<div style={{padding:'0 16px 12px',color:'#ffb0a6'}}>⚠ {err}</div>}{docs.length===0?<p className="bvh-empty">Aucune archive attachée à ce dossier.</p>:<div className="bvh-doc-grid">{docs.map(d=><div className="bvh-doc-card" key={d.id}>{isImg(d)?<img className="bvh-doc-thumb" src={d.view_url||d.signed_url||d.external_url} alt={d.filename}/>:<div className="bvh-doc-thumb">{d.external_url?'🔗':'📄'}</div>}<div className="bvh-doc-meta"><b>{label(d.doc_type)}</b><span title={d.filename}>{d.filename}</span><br/><small>Ajouté par {d.uploaded_by_username||'—'}</small><div className="bvh-doc-actions">{(d.view_url||d.signed_url||d.external_url)&&<a href={d.view_url||d.signed_url||d.external_url} target="_blank" rel="noreferrer" style={{color:'#f3d58a',fontWeight:800}}>Consulter</a>}<button onClick={()=>del(d)} style={{background:'none',border:'none',color:'#ffb0a6',cursor:'pointer',fontWeight:800}}>Retirer</button></div></div></div>)}</div>}</div>
 }
 function clientCode(c){const raw=c.legacy_id!=null&&c.legacy_id!==''?c.legacy_id:c.id;return `BVH-${String(raw||'').padStart(4,'0')}`;}
-function clientFullName(c){return `${c.prenom||''} ${c.nom||''}`.trim();}
+function clientIsCompany(c){return String(c?.kind||c?.client_type||'').toLowerCase()==='entreprise';}
+function clientFullName(c){
+  if(clientIsCompany(c)) return String(c?.nom||c?.entreprise||'').trim();
+  return `${c?.prenom||''} ${c?.nom||''}`.trim();
+}
 function clientLoans(c,loans){const cid=String(c.id||'');const name=clientFullName(c).toLowerCase();return (loans||[]).filter(l=>String(l.client_id||'')===cid || `${l.prenom||''} ${l.nom||''}`.trim().toLowerCase()===name);}
 function calcClientStats(c,loans){const ls=clientLoans(c,loans);const total=ls.reduce((s,l)=>s+Number(l.somme||0),0);const expected=ls.reduce((s,l)=>s+Number(l.total_a_rembourser||0),0);const paid=ls.reduce((s,l)=>s+(l.echeances||[]).filter(e=>e.statut==='paye').reduce((a,e)=>a+Number(e.montant||0),0),0);const active=ls.filter(l=>(l.echeances||[]).some(e=>e.statut!=='paye')).length;const late=ls.reduce((s,l)=>s+(l.echeances||[]).filter(e=>e.statut!=='paye'&&daysDiff(e.date)<0).length,0);return{loans:ls,total,expected,paid,active,late};}
 function NotesPanel({client,focusSignal}){
@@ -1539,7 +1543,7 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
   return <div className="vx-home">
     <header className="vx-hero" style={{paddingTop:18}}>
       <button type="button" className="vx-btn quiet" onClick={onBack}>← Clients</button>
-      <span className="vx-pill"><i></i> {clientCode(client)} · {pack.late?'Retard':'À jour'}</span>
+      <span className="vx-pill"><i></i> {clientCode(client)} · {clientIsCompany(client)?'Entreprise':'Personne'} · {pack.late?'Retard':'À jour'}</span>
       <h1>{clientFullName(client)}</h1>
       <p>{client.telegram||'Télégramme non indiqué'} · {client.adresse||'Adresse non indiquée'}</p>
       <div className="vx-hero-actions">
@@ -1561,13 +1565,86 @@ function ClientDossier({client,loans,setLoans,lifeInsurance,setLifeInsurance,boo
       {group.items.map(item=><div key={item.id} className={'vx-row '+(item.tone||'')} style={{display:'flex',gap:10,alignItems:'center',justifyContent:'space-between'}}><button type="button" style={{flex:1,border:'none',background:'transparent',color:'inherit',textAlign:'left',cursor:'pointer',display:'grid',gridTemplateColumns:'1.4fr 1fr 1fr 1fr',gap:12,alignItems:'center'}} onClick={()=>setDesk({kind:group.kind,service:group.service,id:item.id})}><div><b>{item.ref}</b><small>{item.title}</small></div><span>{item.left}<br/>{item.leftLabel}</span><span>{item.right}<br/>{item.rightLabel}</span><div><b>{item.status}</b><small>{item.extra}</small></div></button>{canDeleteService&&<button type="button" className="vx-btn quiet" style={{color:'#ffb0a6',minWidth:96}} onClick={e=>deleteServiceContract(group,item,e)}>Supprimer</button>}</div>)}
     </section>)}
     <section className="vx-fiche-foot">
-      <div className="vx-grid-2"><div className="vx-card"><h3>Identité</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div>
+      <div className="vx-grid-2"><div className="vx-card"><h3>{clientIsCompany(client)?'Entreprise':'Identité'}</h3><p>{clientFullName(client)}</p><p>{client.telegram||'—'}</p><p>{client.adresse||'—'}</p></div><ClientAgendaPanel client={client} appointments={appointments}/></div>
       <DocumentPanel client={client} focusSignal={docFocus}/>
       <NotesPanel client={client} focusSignal={noteFocus}/>
     </section>
   </div>;
 }
-function ClientModal({open,onClose,onSave,client}){const empty={nom:'',prenom:'',telegram:'',adresse:''};const[f,setF]=useState(empty);useEffect(()=>{if(open)setF(client?{...empty,...client}:empty)},[open,client]);if(!open)return null;async function save(){if(!f.nom||!f.prenom)return alert('Nom et prénom requis');await onSave(f);onClose();}return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:210,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:'linear-gradient(180deg,#1e140b,#100a06)',border:'1px solid #805a28',borderTop:'4px solid #c9943c',borderRadius:14,padding:24,width:620,maxWidth:'96vw'}}><h2 style={{color:'#f6d27b',marginBottom:12}}>{client?'Modifier le dossier client':'Ouvrir un dossier client'}</h2><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Prénom" value={f.prenom||''} onChange={e=>setF({...f,prenom:e.target.value})}/><Inp label="Nom" value={f.nom||''} onChange={e=>setF({...f,nom:e.target.value})}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Télégramme" value={f.telegram||''} onChange={e=>setF({...f,telegram:e.target.value})}/><Inp label="Adresse / État" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/></div><div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}><Btn color="#555" onClick={onClose}>Annuler</Btn><Btn color="#8b642c" onClick={save}>Enregistrer</Btn></div></div></div>}
+function ClientModal({open,onClose,onSave,client}){
+  const empty={kind:'personne',nom:'',prenom:'',telegram:'',adresse:'',entreprise:''};
+  const[f,setF]=useState(empty);
+  const[tab,setTab]=useState('personne');
+  useEffect(()=>{
+    if(!open) return;
+    if(client){
+      const kind=clientIsCompany(client)?'entreprise':'personne';
+      setTab(kind);
+      setF({
+        ...empty,
+        ...client,
+        kind,
+        nom:kind==='entreprise'?(client.nom||client.entreprise||''): (client.nom||''),
+        prenom:kind==='entreprise'?'':(client.prenom||'')
+      });
+      return;
+    }
+    setTab('personne');
+    setF(empty);
+  },[open,client]);
+  if(!open) return null;
+  function switchTab(next){
+    setTab(next);
+    setF({
+      ...f,
+      kind:next,
+      prenom:next==='entreprise'?'':f.prenom,
+      nom:next==='entreprise'?(f.entreprise||f.nom||''):f.nom
+    });
+  }
+  async function save(){
+    if(tab==='entreprise'){
+      const nom=String(f.nom||'').trim();
+      if(!nom) return alert("Le nom de l'entreprise est requis");
+      await onSave({...f,kind:'entreprise',nom,prenom:'',entreprise:nom,telegram:f.telegram||'',adresse:f.adresse||''});
+    }else{
+      if(!f.nom||!f.prenom) return alert('Nom et prénom requis');
+      await onSave({...f,kind:'personne'});
+    }
+    onClose();
+  }
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:210,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+    <div style={{background:'linear-gradient(180deg,#1e140b,#100a06)',border:'1px solid #805a28',borderTop:'4px solid #c9943c',borderRadius:14,padding:24,width:620,maxWidth:'96vw'}}>
+      <h2 style={{color:'#f6d27b',marginBottom:12}}>{client?'Modifier le dossier client':'Ouvrir un dossier client'}</h2>
+      <div className="bvh-loan-tabs" style={{marginBottom:16}}>
+        <button type="button" className={'bvh-loan-tab'+(tab==='personne'?' active':'')} onClick={()=>switchTab('personne')}><b>Personne</b></button>
+        <button type="button" className={'bvh-loan-tab'+(tab==='entreprise'?' active':'')} onClick={()=>switchTab('entreprise')}><b>Entreprise</b></button>
+      </div>
+      {tab==='entreprise'
+        ? <>
+          <div style={{marginBottom:12}}><Inp label="Nom de l'entreprise" value={f.nom||''} onChange={e=>setF({...f,nom:e.target.value,entreprise:e.target.value})}/></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <Inp label="Télégramme" value={f.telegram||''} onChange={e=>setF({...f,telegram:e.target.value})}/>
+            <Inp label="Adresse / État" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/>
+          </div>
+        </>
+        : <>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <Inp label="Prénom" value={f.prenom||''} onChange={e=>setF({...f,prenom:e.target.value})}/>
+            <Inp label="Nom" value={f.nom||''} onChange={e=>setF({...f,nom:e.target.value})}/>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+            <Inp label="Télégramme" value={f.telegram||''} onChange={e=>setF({...f,telegram:e.target.value})}/>
+            <Inp label="Adresse / État" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/>
+          </div>
+        </>}
+      <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}>
+        <Btn color="#555" onClick={onClose}>Annuler</Btn>
+        <Btn color="#8b642c" onClick={save}>Enregistrer</Btn>
+      </div>
+    </div>
+  </div>;
+}
 function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsurance,setLifeInsurance,books,horses,notify,openClientId,onOpenClientHandled,onQuickAppointment,me,activeAgence,onRefresh}){
   const[query,setQuery]=useState(''),[selectedId,setSelectedId]=useState(null),[modal,setModal]=useState(false),[editing,setEditing]=useState(null);
   useEffect(()=>{if(!openClientId)return;const target=clients.find(c=>String(c.id)===String(openClientId));if(target){setSelectedId(target.id);onOpenClientHandled?.();}},[openClientId,clients]);
@@ -1581,7 +1658,7 @@ function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsuran
     try{await api.deleteClient(c.id);setClients(clients.filter(x=>x.id!==c.id));setSelectedId(null);notify('Client supprimé')}catch(e){notify('⚠ '+e.message)}
   }
   const needle=query.trim().toLowerCase();
-  const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')).toLowerCase().includes(needle)).slice().sort((a,b)=>clientFullName(a).localeCompare(clientFullName(b),'fr'));
+  const list=clients.filter(c=>(clientFullName(c)+' '+(c.telegram||'')+' '+(c.adresse||'')+' '+(c.entreprise||'')+' '+(clientIsCompany(c)?'entreprise':'')).toLowerCase().includes(needle)).slice().sort((a,b)=>clientFullName(a).localeCompare(clientFullName(b),'fr'));
   if(selected)return <><ClientDossier client={selected} loans={loans} setLoans={setLoans} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} appointments={appointments} clients={clients} notify={notify} me={me} activeAgence={activeAgence} onBack={()=>setSelectedId(null)} onEdit={edit} onDelete={del} onQuickAppointment={onQuickAppointment} onRefresh={onRefresh}/><ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/></>;
   return <div className="vx-home">
     <div className="bvh-topbar">
@@ -1589,7 +1666,7 @@ function ClientsPage({clients,setClients,loans,setLoans,appointments,lifeInsuran
       <button type="button" className="vx-btn primary" onClick={add}>+ Ouvrir un dossier</button>
     </div>
     <Inp placeholder="Nom, télégramme ou adresse…" value={query} onChange={e=>setQuery(e.target.value)} style={{margin:'8px auto 22px',maxWidth:520}}/>
-    {list.length===0?<p className="vx-lead">Aucun client pour cette recherche.</p>:<div className="vx-grid">{list.map(c=>{const pack=clientPortfolio(c,{loans,life:lifeInsurance,books,horses});return <button type="button" className="vx-card" key={c.id} onClick={()=>setSelectedId(c.id)}><header><span>{clientCode(c)}</span><span>{pack.late?'En retard':'À jour'}</span></header><h3>{clientFullName(c)}</h3><p>{c.telegram||'Télégramme non indiqué'}</p><span>{pack.count?pack.labels.join(' · '):'Aucun contrat'}</span></button>;})}</div>}
+    {list.length===0?<p className="vx-lead">Aucun client pour cette recherche.</p>:<div className="vx-grid">{list.map(c=>{const pack=clientPortfolio(c,{loans,life:lifeInsurance,books,horses});return <button type="button" className="vx-card" key={c.id} onClick={()=>setSelectedId(c.id)}><header><span>{clientCode(c)}</span><span>{clientIsCompany(c)?'Entreprise':(pack.late?'En retard':'À jour')}</span></header><h3>{clientFullName(c)}</h3><p>{c.telegram||'Télégramme non indiqué'}</p><span>{pack.count?pack.labels.join(' · '):(clientIsCompany(c)?'Fiche entreprise':'Aucun contrat')}</span></button>;})}</div>}
     <ClientModal open={modal} client={editing} onClose={()=>{setModal(false);setEditing(null)}} onSave={saveClient}/>
   </div>;
 }
@@ -1618,7 +1695,7 @@ function LoanModal({open,onClose,onSave,loan,clients,prefill,defaultAgence='van_
     }
   }
   const row=(...a)=><div style={{display:'grid',gridTemplateColumns:`repeat(${a.length},1fr)`,gap:12,marginBottom:12}}>{a}</div>;
-  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:C.card,borderTop:'4px solid '+C.blue,borderRadius:14,padding:24,width:680,maxHeight:'92vh',overflow:'auto'}}><h2>{loan?'Modifier le prêt':'Nouveau prêt'}</h2><p style={{color:'#d8bf82',fontSize:13,margin:'6px 0 14px'}}>La synchronisation des prêts est suspendue pendant votre saisie.</p><Sec>Client</Sec><Select label="Client existant" value={f.client_id} onChange={e=>pick(e.target.value)}><option value="">— Sélectionner —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>)}</Select>{row(<Inp label="Prénom" value={f.prenom} onChange={e=>setF({...f,prenom:e.target.value})}/>,<Inp label="Nom" value={f.nom} onChange={e=>setF({...f,nom:e.target.value})}/>)}<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Télégramme" value={f.telegram} onChange={e=>setF({...f,telegram:e.target.value})}/><Select label="Banque" value={normalizeAgence(f.agence)} onChange={e=>setF({...f,agence:e.target.value})}><option value="saint_denis">Saint-Denis</option><option value="van_horn">Van Horn</option><option value="valentine">Valentine</option><option value="rhodes">Rhodes</option><option value="blackwater">Blackwater</option><option value="strawberry">Strawberry</option><option value="sunset">Sunset</option></Select></div>{row(<Inp label="Adresse" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/>,<Inp label="État civil" value={f.civilite||''} onChange={e=>setF({...f,civilite:e.target.value})}/>)}{row(<Inp label="Date de naissance" value={f.date_naissance||''} onChange={e=>setF({...f,date_naissance:e.target.value})}/>,<Inp label="Nationalité" value={f.nationalite||''} onChange={e=>setF({...f,nationalite:e.target.value})}/>)}{row(<Inp label="Profession" value={f.profession||''} onChange={e=>setF({...f,profession:e.target.value})}/>,<Inp label="Entreprise" value={f.entreprise||''} onChange={e=>setF({...f,entreprise:e.target.value})}/>)}<Inp label="Salaire hebdomadaire" value={f.salaire_hebdomadaire||''} onChange={e=>setF({...f,salaire_hebdomadaire:e.target.value})} style={{marginBottom:12}}/><Sec>Détails financiers</Sec>{row(<Inp label="Somme prêtée ($)" type="number" value={f.somme} onChange={e=>setF({...f,somme:e.target.value})}/>,<Inp label="Taux par échéance (%)" type="number" value={f.taux} onChange={e=>setF({...f,taux:e.target.value})}/>)}{row(<Inp label="Total à rembourser ($)" value={sched.total.toFixed(2)} readOnly/>,<Stepper label="Nombre d'échéances" value={f.nb || 3} min={1} max={52} onChange={nb=>setF({...f,nb})}/>)}<Inp label="Date 1ère échéance" type="date" value={f.date1} onChange={e=>setF({...f,date1:e.target.value})}/><div style={{background:'#4a9eff12',border:'1px solid #4a9eff44',borderRadius:8,padding:10,margin:'12px 0'}}>Montant fixe chaque semaine : <b>{fCur(sched.montant)}</b></div><Sec>Garanties</Sec><textarea value={f.garanties||''} onChange={e=>setF({...f,garanties:e.target.value})} rows={3} style={{width:'100%',background:'#13151f',border:'1px solid '+C.bord,borderRadius:8,color:C.txt,padding:10}}/>{loan&&<><Sec>Statut du prêt</Sec><Select label="Historique de remboursement" value={f.repayment_status||'normal'} onChange={e=>setF({...f,repayment_status:e.target.value})}>{Object.entries(REPAYMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select><Sec>Suivi de recouvrement</Sec><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Select label="Statut recouvrement" value={f.recouvrement_status||'aucun'} onChange={e=>setF({...f,recouvrement_status:e.target.value})}>{Object.entries(RECOUVREMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select><Inp label="Ouvert depuis" value={f.recouvrement_started_at?new Date(f.recouvrement_started_at).toLocaleString('fr-FR'):'—'} readOnly/></div><Txt label="Notes recouvrement" value={f.recouvrement_notes||''} onChange={e=>setF({...f,recouvrement_notes:e.target.value})}/></>}<div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}><Btn color="#555" disabled={saving} onClick={onClose}>Annuler</Btn><Btn disabled={saving} onClick={save}>{saving?'Enregistrement…':'Enregistrer'}</Btn></div></div></div>
+  return <div onClick={e=>e.target===e.currentTarget&&onClose()} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:C.card,borderTop:'4px solid '+C.blue,borderRadius:14,padding:24,width:680,maxHeight:'92vh',overflow:'auto'}}><h2>{loan?'Modifier le prêt':'Nouveau prêt'}</h2><p style={{color:'#d8bf82',fontSize:13,margin:'6px 0 14px'}}>La synchronisation des prêts est suspendue pendant votre saisie.</p><Sec>Client</Sec><Select label="Client existant" value={f.client_id} onChange={e=>pick(e.target.value)}><option value="">— Sélectionner —</option>{clients.map(c=><option key={c.id} value={c.id}>{clientFullName(c)}</option>)}</Select>{row(<Inp label="Prénom" value={f.prenom} onChange={e=>setF({...f,prenom:e.target.value})}/>,<Inp label="Nom" value={f.nom} onChange={e=>setF({...f,nom:e.target.value})}/>)}<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Inp label="Télégramme" value={f.telegram} onChange={e=>setF({...f,telegram:e.target.value})}/><Select label="Banque" value={normalizeAgence(f.agence)} onChange={e=>setF({...f,agence:e.target.value})}><option value="saint_denis">Saint-Denis</option><option value="van_horn">Van Horn</option><option value="valentine">Valentine</option><option value="rhodes">Rhodes</option><option value="blackwater">Blackwater</option><option value="strawberry">Strawberry</option><option value="sunset">Sunset</option></Select></div>{row(<Inp label="Adresse" value={f.adresse||''} onChange={e=>setF({...f,adresse:e.target.value})}/>,<Inp label="État civil" value={f.civilite||''} onChange={e=>setF({...f,civilite:e.target.value})}/>)}{row(<Inp label="Date de naissance" value={f.date_naissance||''} onChange={e=>setF({...f,date_naissance:e.target.value})}/>,<Inp label="Nationalité" value={f.nationalite||''} onChange={e=>setF({...f,nationalite:e.target.value})}/>)}{row(<Inp label="Profession" value={f.profession||''} onChange={e=>setF({...f,profession:e.target.value})}/>,<Inp label="Entreprise" value={f.entreprise||''} onChange={e=>setF({...f,entreprise:e.target.value})}/>)}<Inp label="Salaire hebdomadaire" value={f.salaire_hebdomadaire||''} onChange={e=>setF({...f,salaire_hebdomadaire:e.target.value})} style={{marginBottom:12}}/><Sec>Détails financiers</Sec>{row(<Inp label="Somme prêtée ($)" type="number" value={f.somme} onChange={e=>setF({...f,somme:e.target.value})}/>,<Inp label="Taux par échéance (%)" type="number" value={f.taux} onChange={e=>setF({...f,taux:e.target.value})}/>)}{row(<Inp label="Total à rembourser ($)" value={sched.total.toFixed(2)} readOnly/>,<Stepper label="Nombre d'échéances" value={f.nb || 3} min={1} max={52} onChange={nb=>setF({...f,nb})}/>)}<Inp label="Date 1ère échéance" type="date" value={f.date1} onChange={e=>setF({...f,date1:e.target.value})}/><div style={{background:'#4a9eff12',border:'1px solid #4a9eff44',borderRadius:8,padding:10,margin:'12px 0'}}>Montant fixe chaque semaine : <b>{fCur(sched.montant)}</b></div><Sec>Garanties</Sec><textarea value={f.garanties||''} onChange={e=>setF({...f,garanties:e.target.value})} rows={3} style={{width:'100%',background:'#13151f',border:'1px solid '+C.bord,borderRadius:8,color:C.txt,padding:10}}/>{loan&&<><Sec>Statut du prêt</Sec><Select label="Historique de remboursement" value={f.repayment_status||'normal'} onChange={e=>setF({...f,repayment_status:e.target.value})}>{Object.entries(REPAYMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select><Sec>Suivi de recouvrement</Sec><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}><Select label="Statut recouvrement" value={f.recouvrement_status||'aucun'} onChange={e=>setF({...f,recouvrement_status:e.target.value})}>{Object.entries(RECOUVREMENT_STATES).map(([k,v])=><option key={k} value={k}>{v[0]}</option>)}</Select><Inp label="Ouvert depuis" value={f.recouvrement_started_at?new Date(f.recouvrement_started_at).toLocaleString('fr-FR'):'—'} readOnly/></div><Txt label="Notes recouvrement" value={f.recouvrement_notes||''} onChange={e=>setF({...f,recouvrement_notes:e.target.value})}/></>}<div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:16}}><Btn color="#555" disabled={saving} onClick={onClose}>Annuler</Btn><Btn disabled={saving} onClick={save}>{saving?'Enregistrement…':'Enregistrer'}</Btn></div></div></div>
 }
 
 function LoanDetail({loan,onBack,onUpdate,onDelete,notify,me}){
@@ -2300,7 +2377,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
     {formOpen&&<div onClick={e=>e.target===e.currentTarget&&cancelHorseForm()} style={{position:'fixed',inset:0,background:'#000b',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}><div style={{background:C.card,borderTop:'4px solid '+C.blue,borderRadius:14,padding:24,width:820,maxWidth:'100%',maxHeight:'92vh',overflow:'auto'}}>
       <h2>{f.id?'Modifier le crédit hippique':'Nouveau crédit hippique'}</h2>
       <section className="bvh-form-part"><h3>Client</h3><div className="bvh-form-grid">
-          <div className="bvh-form-span"><Select label="Client existant" value={f.client_id} onChange={e=>pick(e.target.value)}><option value="">— Sélectionner —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.prenom} {c.nom}</option>)}</Select></div>
+          <div className="bvh-form-span"><Select label="Client existant" value={f.client_id} onChange={e=>pick(e.target.value)}><option value="">— Sélectionner —</option>{clients.map(c=><option key={c.id} value={c.id}>{clientFullName(c)}</option>)}</Select></div>
           <Inp label="Prénom" value={f.client_prenom} onChange={e=>setF({...f,client_prenom:e.target.value})}/>
           <Inp label="Nom" value={f.client_nom} onChange={e=>setF({...f,client_nom:e.target.value})}/>
           <Inp label="Date du jour" value={f.date_du_jour} onChange={e=>setF({...f,date_du_jour:e.target.value})}/>

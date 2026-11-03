@@ -299,13 +299,20 @@ function Span({ children }) {
   return <div className="bvh-form-span">{children}</div>;
 }
 
+function clientLabel(client) {
+  if (!client) return '';
+  if (String(client.kind || client.client_type || '').toLowerCase() === 'entreprise') {
+    return String(client.nom || client.entreprise || '').trim() || 'Entreprise';
+  }
+  return `${client.prenom || ''} ${client.nom || ''}`.trim();
+}
 function ClientSelect({ clients, value, onChange, label, section }) {
   const { Select } = bfKit();
   const list = Array.isArray(clients) ? clients : [];
   return <Part title={section || 'Client'} plain>
     <Select label={label || 'Client existant'} value={value || ''} onChange={(event) => onChange(event.target.value)}>
       <option value="">— Sélectionner —</option>
-      {list.map((client) => <option key={client.id} value={client.id}>{client.prenom} {client.nom}</option>)}
+      {list.map((client) => <option key={client.id} value={client.id}>{clientLabel(client)}</option>)}
     </Select>
   </Part>;
 }
@@ -340,13 +347,14 @@ function fillFromClient(form, client, mode) {
   const nom = client.nom || '';
   const civility = client.civilite === 'Madame' ? 'Madame' : 'Monsieur';
   if (mode === 'company') {
+    const company = String(client.kind || client.client_type || '').toLowerCase() === 'entreprise';
     return {
       ...form,
       client_id: client.id,
-      patron: `${prenom} ${nom}`.trim(),
+      patron: company ? (form.patron || '') : `${prenom} ${nom}`.trim(),
       patron_telegram: client.telegram || '',
       address: client.adresse || '',
-      company_name: client.entreprise || form.company_name || ''
+      company_name: company ? (client.nom || client.entreprise || '') : (client.entreprise || form.company_name || '')
     };
   }
   return {
