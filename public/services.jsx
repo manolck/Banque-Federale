@@ -590,6 +590,9 @@ function dossierSides(service, row) {
     return {
       left: [
         ['Palier', row.tier || '—'],
+        ['Expérience', row.experience || '—'],
+        ['Objectif', row.objectives || '—'],
+        ['Durée envisagée', row.horizon || '—'],
         ['Dernière séance', latestMarketStatement(row) ? `${bfMarketDate(latestMarketStatement(row).on)} · ${fundResult(latestMarketStatement(row).result_percent)}` : '—'],
         ['Régime', (latestMarketStatement(row) && latestMarketStatement(row).regime_label) || '—'],
         ['Distribution', row.profit_distribution || '—'],
@@ -996,20 +999,45 @@ function identityFields(form, setForm, options = {}) {
 const BF_SERVICES = {
   speculative_funds: {
     route: 'speculative_funds', title: 'Fonds spéculatifs', kicker: 'Souscription', create: '+ Nouvelle souscription', clientMode: 'fonds',
-    blank: () => ({ civility: 'Monsieur', tier: 'Palier I', own_account: true, for_other_client: false, for_client_id: '', for_full_name: '', for_telegram: '', declare_risks: false, declare_past: false, declare_accuracy: false, declare_terms: false }),
+    blank: () => ({
+      civility: 'Monsieur',
+      tier: 'Palier I',
+      experience: 'Débutant',
+      objectives: 'Croissance du capital',
+      horizon: 'Indéterminée',
+      payment_mode: 'Par transfert sur le compte (aucun frais bancaire)',
+      profit_distribution: 'Versement hebdomadaire',
+      funds_origin: 'Épargne personnelle',
+      funds_origin_other: '',
+      own_account: true,
+      for_other_client: false,
+      for_client_id: '',
+      for_full_name: '',
+      for_telegram: '',
+      declare_risks: false,
+      declare_past: false,
+      declare_accuracy: false,
+      declare_terms: false
+    }),
     preview: (form) => ({
       'Résultat hebdomadaire': 'Tirage du palier, chaque dimanche à 18 h',
       Palier: form.tier || '',
       'Montant souscrit': bfFr(form.amount),
       Compte: form.for_other_client ? (form.for_full_name || 'Autre client requis') : 'Propre compte'
     }),
-    payload: (form) => ({
-      ...form,
-      own_account: !form.for_other_client,
-      for_client_id: form.for_other_client ? form.for_client_id : '',
-      for_full_name: form.for_other_client ? form.for_full_name : '',
-      for_telegram: form.for_other_client ? form.for_telegram : ''
-    }),
+    payload: (form) => {
+      const origin = form.funds_origin === 'Autres'
+        ? (String(form.funds_origin_other || '').trim() ? `Autres : ${String(form.funds_origin_other).trim()}` : 'Autres')
+        : form.funds_origin;
+      return {
+        ...form,
+        funds_origin: origin,
+        own_account: !form.for_other_client,
+        for_client_id: form.for_other_client ? form.for_client_id : '',
+        for_full_name: form.for_other_client ? form.for_full_name : '',
+        for_telegram: form.for_other_client ? form.for_telegram : ''
+      };
+    },
     form: (form, setForm, helpers = {}) => {
       const { Inp, Select } = bfKit();
       const on = bind(form, setForm);
@@ -1024,24 +1052,27 @@ const BF_SERVICES = {
           for_telegram: client.telegram || ''
         });
       }
+      const experiences = ['Débutant', 'Intermédiaire', 'Confirmé', 'Professionnel'];
+      const objectifs = ['Préservation du capital', 'Revenus réguliers', 'Croissance du capital', "Diversification d'activité"];
+      const origines = ['Revenus professionnels', 'Épargne personnelle', "Vente d'actifs", 'Autres'];
       return <>
         <Part title="Identité">
           <AgencySelect value={form.agency} onChange={on('agency')} />
           {identityFields(form, setForm, { fullName: true, address: true })}
         </Part>
-        <Part title="Profil d'investissement">
-          <Inp label="Expérience" value={form.experience || ''} onChange={on('experience')} />
-          <Inp label="Durée envisagée" value={form.horizon || ''} onChange={on('horizon')} />
-          <Span><Inp label="Objectifs" value={form.objectives || ''} onChange={on('objectives')} /></Span>
+        <Part title="Profil investisseur">
+          <Span><Choice label="Expérience en investissement" value={form.experience || ''} options={experiences.map((value) => ({ value, label: value }))} onChange={(value) => setForm({ ...form, experience: value })} /></Span>
+          <Span><Choice label="Objectif principal de l’investissement" value={form.objectives || ''} options={objectifs.map((value) => ({ value, label: value }))} onChange={(value) => setForm({ ...form, objectives: value })} /></Span>
+          <Inp label="Montant de la souscription" type="number" value={form.amount || ''} onChange={on('amount')} />
+          <Select label="Palier de la souscription" value={form.tier || 'Palier I'} onChange={on('tier')}><option>Palier I</option><option>Palier II</option><option>Palier III</option></Select>
+          <Span><Choice label="Durée d’investissement envisagée" value={form.horizon || ''} options={['Quelques semaines', 'Quelques mois', 'Un an ou plus', 'Indéterminée'].map((value) => ({ value, label: value }))} onChange={(value) => setForm({ ...form, horizon: value })} /></Span>
+          <Span><Choice label="Mode de versement" value={form.payment_mode || ''} options={[{ value: 'Par transfert sur le compte (aucun frais bancaire)', label: 'Par transfert sur le compte (aucun frais bancaire)' }]} onChange={(value) => setForm({ ...form, payment_mode: value })} /></Span>
+          <Inp label="Numéro d'identification bancaire, si échéant" value={form.bank_id || ''} onChange={on('bank_id')} />
+          <Span><Choice label="Distribution des profits" value={form.profit_distribution || ''} options={[{ value: 'Versement hebdomadaire', label: 'Versement hebdomadaire' }, { value: 'Réinvestissement', label: 'Réinvestissement' }]} onChange={(value) => setForm({ ...form, profit_distribution: value })} /></Span>
         </Part>
-        <Part title="Souscription">
-          <Select label="Palier" value={form.tier || 'Palier I'} onChange={on('tier')}><option>Palier I</option><option>Palier II</option><option>Palier III</option></Select>
-          <Inp label="Montant souscrit" type="number" value={form.amount || ''} onChange={on('amount')} />
-          <Inp label="Distribution des profits" value={form.profit_distribution || ''} onChange={on('profit_distribution')} />
-          <Inp label="Mode de versement" value={form.payment_mode || ''} onChange={on('payment_mode')} />
-          <Inp label="Identification bancaire" value={form.bank_id || ''} onChange={on('bank_id')} />
-          <Inp label="Origine des fonds" value={form.funds_origin || ''} onChange={on('funds_origin')} />
-          <Inp label="Patrimoine estimé" type="number" value={form.estimated_wealth || ''} onChange={on('estimated_wealth')} />
+        <Part title="Origine des fonds">
+          <Span><Choice label="Source principale des capitaux investis" value={form.funds_origin || ''} options={origines.map((value) => ({ value, label: value }))} onChange={(value) => setForm({ ...form, funds_origin: value })} /></Span>
+          {form.funds_origin === 'Autres' && <Inp label="Précision" value={form.funds_origin_other || ''} onChange={on('funds_origin_other')} />}
         </Part>
         <Part title="Déclarations" plain>
           <Flag label="Investit pour un autre client" checked={!!form.for_other_client} onChange={(value) => setForm({
