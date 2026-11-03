@@ -67,19 +67,32 @@ assert.strictEqual(afterWithdrawal.interest, 1.59);
 assert.strictEqual(afterWithdrawal.nextBalance, 54.59);
 
 assert.strictEqual(money.money(7500 / 8), 937.5);
+const lifeSub = money.lifeFinancials([
+  { status: 'paid', amount: 125, paid_at: '2026-01-01' }
+], new Date('2026-01-01T12:00:00Z'));
+assert.strictEqual(lifeSub.balance, 131.25);
+assert.strictEqual(lifeSub.last_interest, 6.25);
+const lifeWeek2Due = money.lifeFinancials([
+  { status: 'paid', amount: 125, paid_at: '2026-01-01' },
+  { status: 'paid', amount: 125, paid_at: '2026-01-08' }
+], new Date('2026-01-08T12:00:00Z'));
+assert.strictEqual(lifeWeek2Due.principal, 250);
+assert.strictEqual(lifeWeek2Due.balance, 269.06);
+assert.strictEqual(lifeWeek2Due.interest, 19.06);
+assert.strictEqual(lifeWeek2Due.last_interest, 12.81);
 const lifeWeek1 = money.lifeFinancials([
   { status: 'paid', amount: 625, paid_at: '2026-01-01' }
 ], new Date('2026-01-08T12:00:00Z'));
 assert.strictEqual(lifeWeek1.principal, 625);
-assert.strictEqual(lifeWeek1.interest, 31.25);
-assert.strictEqual(lifeWeek1.balance, 656.25);
+assert.strictEqual(lifeWeek1.balance, 689.06);
+assert.strictEqual(lifeWeek1.interest, 64.06);
 const lifeWeek2 = money.lifeFinancials([
   { status: 'paid', amount: 625, paid_at: '2026-01-01' },
   { status: 'paid', amount: 625, paid_at: '2026-01-08' }
 ], new Date('2026-01-15T12:00:00Z'));
 assert.strictEqual(lifeWeek2.principal, 1250);
-assert.strictEqual(lifeWeek2.balance, 1345.31);
-assert.strictEqual(lifeWeek2.interest, 95.31);
+assert.strictEqual(lifeWeek2.balance, 1412.58);
+assert.strictEqual(lifeWeek2.interest, 162.58);
 const lifePaid = Array.from({ length: 8 }, (_, index) => ({
   status: 'paid',
   amount: 625,

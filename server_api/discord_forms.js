@@ -119,7 +119,7 @@ function lifeEmbed(row, stamp) {
     '',
     '**Conditions**',
     line('Durée', '8 semaines'),
-    line('Intérêt', '5 % par semaine sur le capital investi'),
+    line('Intérêt', '5 % par semaine après chaque ajout de fonds'),
     line('Retrait volontaire', '15 %'),
     line('Après les 8 semaines', enrollment.leave_placed ? 'Capital laissé placé' : 'Capital repris'),
     '',

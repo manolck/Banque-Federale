@@ -198,8 +198,18 @@ function lifeAsOf(contract, now = new Date()) {
   return Number.isNaN(date.getTime()) ? now : date;
 }
 
+function lifeDay(value) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return '';
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value || '').slice(0, 10);
+  return validDate(raw) ? raw : '';
+}
+
 function lifeFinancials(payments, now = new Date()) {
-  // Chaque versement compose 5 % par semaine pleine écoulée depuis son paid_at.
+  // Chaque semaine : d'abord l'ajout des fonds du jour, puis 5 % sur le solde.
+  // Ex. 2ᵉ échéance : (125 × 1,05 + 125) × 1,05.
   const paid = (Array.isArray(payments) ? payments : [])
     .filter((payment) => payment && payment.status === 'paid')
     .map((payment, index) => ({
@@ -207,22 +217,48 @@ function lifeFinancials(payments, now = new Date()) {
       at: payment.paid_at ? String(payment.paid_at).slice(0, 10) : '',
       number: Number(payment.number) || (index + 1)
     }))
+    .filter((payment) => payment.at && validDate(payment.at))
     .sort((left, right) => {
-      const byNum = left.number - right.number;
-      if (byNum) return byNum;
-      return String(left.at).localeCompare(String(right.at));
+      const byDate = String(left.at).localeCompare(String(right.at));
+      if (byDate) return byDate;
+      return left.number - right.number;
     });
+  if (!paid.length) {
+    return {
+      principal: 0,
+      interest: 0,
+      last_interest: 0,
+      balance: 0,
+      paid_installments: 0,
+      remaining_installments: 8
+    };
+  }
+
+  const asOf = lifeDay(now) || civilToday();
   let balance = 0;
   let principal = 0;
   let lastInterest = 0;
-  for (const payment of paid) {
-    const weeks = payment.at ? completedWeeks(payment.at, now) : 0;
-    const grown = growLifeDeposit(payment.amount, weeks);
-    const previous = weeks > 0 ? growLifeDeposit(payment.amount, weeks - 1) : payment.amount;
-    principal = money(principal + payment.amount);
-    balance = money(balance + grown);
-    lastInterest = money(lastInterest + (grown - previous));
+  let index = 0;
+  let cursor = paid[0].at;
+
+  while (cursor && cursor <= asOf) {
+    while (index < paid.length && paid[index].at <= cursor) {
+      balance = money(balance + paid[index].amount);
+      principal = money(principal + paid[index].amount);
+      index += 1;
+    }
+    const before = balance;
+    balance = money(balance * LIFE_WEEKLY);
+    lastInterest = money(balance - before);
+    cursor = addDays(cursor, 7);
   }
+
+  while (index < paid.length && paid[index].at <= asOf) {
+    balance = money(balance + paid[index].amount);
+    principal = money(principal + paid[index].amount);
+    index += 1;
+  }
+
   return {
     principal,
     interest: money(balance - principal),

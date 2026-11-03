@@ -1374,7 +1374,7 @@ function LifeDesk(props) {
         <Flag label="Souscripteur présent" checked={form.subscriber_present} onChange={(value) => setForm({ ...form, subscriber_present: value })} />
         <Flag label="Bénéficiaire présent" checked={form.beneficiary_present} onChange={(value) => setForm({ ...form, beneficiary_present: value })} />
         <Flag label="Origine des fonds cohérente" checked={form.funds_coherent} onChange={(value) => setForm({ ...form, funds_coherent: value })} />
-        <p style={{ color: '#c9a567', margin: 0 }}>Le bénéficiaire est immuable après la création. Chaque semaine, 5 % sont calculés sur le capital déjà investi, intérêts compris, puis ajoutés à ce capital. Retrait volontaire : 15 %. Statut de validation : Police acceptée.</p>
+        <p style={{ color: '#c9a567', margin: 0 }}>Le bénéficiaire est immuable après la création. Chaque semaine, les fonds de l’échéance sont d’abord ajoutés, puis 5 % sont calculés sur le solde (intérêts compris). Retrait volontaire : 15 %. Statut de validation : Police acceptée.</p>
       </Part>
       <Part title="Notes" plain>
         <Txt label="Notes internes" value={form.notes || ''} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
