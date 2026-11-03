@@ -79,8 +79,13 @@ function marketLine(row, sunday) {
   return (Array.isArray(row && row.statements) ? row.statements : []).find((item) => item && item.market && item.on === sunday) || null;
 }
 
+function fundOpenForMarket(row) {
+  return String((row && row.status) || '').trim().toLowerCase() === 'ouvert';
+}
+
 function applyFund(row, sunday, results) {
-  if (!row || row.status !== 'ouvert') return null;
+  // Pause / clôture : le tirage n'affecte ni le capital ni les relevés.
+  if (!row || !fundOpenForMarket(row)) return null;
   const nom = TIER_OF[row.tier];
   const draw = nom && results && results[nom];
   if (!draw) return null;
@@ -334,6 +339,7 @@ async function settleFunds(funds, date) {
     if (!week.applied) {
       const totals = blankTotals();
       for (const row of funds || []) {
+        if (!fundOpenForMarket(row)) continue;
         const existing = marketLine(row, sunday);
         if (existing) {
           addTotal(totals, row.tier, existing);
@@ -393,5 +399,6 @@ route.dueFriday = dueSunday;
 route.upcomingFriday = upcomingSunday;
 route.slotReached = slotReached;
 route.applyFund = applyFund;
+route.fundOpenForMarket = fundOpenForMarket;
 route.marketEmbed = marketEmbed;
 module.exports = route;

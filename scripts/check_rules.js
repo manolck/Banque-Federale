@@ -480,7 +480,15 @@ assert.strictEqual(credited.capital_balance, 1021);
 assert.strictEqual(credited.statements[0].result_percent, 2.1);
 assert.strictEqual(market.applyFund({ ...credited, status: 'ouvert', tier: 'Palier I' }, '2026-11-01', { I: { final: 9, regime: 'stable', label: 'Marché calme' } }), null);
 assert.strictEqual(market.applyFund({ status: 'pause', tier: 'Palier I', capital_balance: 1000 }, '2026-11-01', { I: { final: 2.1, regime: 'stable', label: 'Marché calme' } }), null);
+assert.strictEqual(market.applyFund({ status: 'Pause', tier: 'Palier I', capital_balance: 1000, statements: [] }, '2026-11-01', { I: { final: 2.1, regime: 'stable', label: 'Marché calme' } }), null);
+assert.ok(!market.fundOpenForMarket({ status: 'pause' }));
+assert.ok(market.fundOpenForMarket({ status: 'ouvert' }));
 assert.strictEqual(market.applyFund({ status: 'clos', tier: 'Palier II', capital_balance: 1000 }, '2026-11-01', { II: { final: 3, regime: 'stable', label: 'Marché calme' } }), null);
+const forumPaused = require('../server_api/fonds_forum').applyProposal(
+  { status: 'pause', capital_balance: 1000, statements: [] },
+  { kind: 'add_statement', statement: { date: '2026-11-01', result_percent: 2, capital_before: 1000, capital_after: 1020 } }
+);
+assert.ok(forumPaused.error);
 const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_balance: 1000, statements: [] }, '2026-11-01', { III: { final: -3, regime: 'krach', label: 'Panique sur les marchés' } });
 assert.strictEqual(lost.capital_balance, 970);
 const tuesday = new Date('2026-10-27T19:00:00Z');

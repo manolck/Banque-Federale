@@ -239,6 +239,7 @@ function diffFund(fund, forum) {
   const used = new Set();
   const out = [];
   const seen = new Set();
+  const paused = String(fund.status || '').trim().toLowerCase() === 'pause';
   for (const item of forum.statements || []) {
     const sig = [item.date, item.capital_before, item.capital_after].join('|');
     if (seen.has(sig)) continue;
@@ -246,7 +247,7 @@ function diffFund(fund, forum) {
     let match = known.find((x, i) => !used.has(i) && same(x.capital_before, item.capital_before) && same(x.capital_after, item.capital_after));
     if (match) {
       used.add(known.indexOf(match));
-      if (Math.abs(Number(match.result_percent) - item.result_percent) > 0.051) {
+      if (!paused && Math.abs(Number(match.result_percent) - item.result_percent) > 0.051) {
         out.push({ kind: 'fix_statement', statement: item, current: match });
       }
       continue;
@@ -254,10 +255,11 @@ function diffFund(fund, forum) {
     match = known.find((x, i) => !used.has(i) && x.on && item.date && dayGap(x.on, item.date) <= 3);
     if (match) {
       used.add(known.indexOf(match));
-      out.push({ kind: 'fix_statement', statement: item, current: match });
+      if (!paused) out.push({ kind: 'fix_statement', statement: item, current: match });
       continue;
     }
-    out.push({ kind: 'add_statement', statement: item, current: null });
+    // En pause : les tirages du forum ne proposent pas de relevé à appliquer.
+    if (!paused) out.push({ kind: 'add_statement', statement: item, current: null });
   }
 
   const knownDeposits = Array.isArray(fund.deposits) ? fund.deposits : [];
@@ -375,6 +377,9 @@ function applyProposal(fund, proposal) {
   const item = proposal.statement;
   if (!item || !item.date || ![item.result_percent, item.capital_before, item.capital_after].every(Number.isFinite)) {
     return { error: 'Relevé du forum incomplet.' };
+  }
+  if (String(fund.status || '').trim().toLowerCase() === 'pause') {
+    return { error: 'Un dossier en pause n’est pas affecté par les tirages du marché.' };
   }
   const list = (Array.isArray(fund.statements) ? fund.statements : []).slice();
   const line = {
