@@ -619,8 +619,10 @@ function missionText(row, echeance) {
     );
   }
   missions.push(`- Inscrire au dossier ${number} la réponse obtenue.`);
+  const author = text(row.created_by_username || row.banquier_username, 80) || '—';
   return [
     line('Type de dossier', kind),
+    line('Contrat établi par', author),
     line('Référence', number),
     '',
     `Objectif : Faire parvenir, avant l'échéance de demain, un télégramme de rappel à ${who} concernant son dossier de ${kindLower} (${number}).`,

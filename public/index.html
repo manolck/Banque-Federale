@@ -2378,6 +2378,7 @@ function HorseCreditPage({clients,notify,activeAgence='toutes',onActiveAgenceCha
       title={`${view.client_prenom||''} ${view.client_nom||''}`.trim()||'—'}
       telegram={view.telegram}
       agencyLabel={agencyText}
+      author={view.created_by_username||''}
       onBack={()=>{setView(null);if(onLeave&&(focusId||createFor))onLeave();}}
       left={[line('Adresse', view.adresse||'—'), line('Profession', view.profession||'—'), line('Course', view.date_course||'—'), line('Cheval / écurie', view.cheval_ecurie||'—')]}
       right={[line('Mise', fCur(view.montant_total), '#f3d58a'), line('Taux', `${view.taux||0} %`), line('Pari', `${view.type_pari||'—'}${view.type_pari_autre?` · ${view.type_pari_autre}`:''}`), line('Statut', view.statut==='termine'?'Terminé':view.statut==='refuse'?'Refusé':'En cours', view.statut==='termine'?'#74d59d':view.statut==='refuse'?'#d76453':'#f3d58a')]}

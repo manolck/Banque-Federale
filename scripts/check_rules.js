@@ -195,18 +195,20 @@ assert.strictEqual(forms.lifeEmbed({
   beneficiary_first_name: 'Charles', beneficiary_last_name: 'Babbage', target_capital: 1000, weekly_payment: 125,
   start_date: '1904-10-01', enrollment: {}
 }, 'stamp').color, 0x247174);
-const mission = forms.missionEmbed({ agency: 'blackwater', dossier_number: 'EPT-BW-0001', prenom: 'Benjamin', nom: 'Goldstein', telegram: '65945' }, { collection: 'pret_term_savings', date: '1904-11-24', amount: 1100 });
+const mission = forms.missionEmbed({ agency: 'blackwater', dossier_number: 'EPT-BW-0001', prenom: 'Benjamin', nom: 'Goldstein', telegram: '65945', created_by_username: 'Kane.Santana' }, { collection: 'pret_term_savings', date: '1904-11-24', amount: 1100 });
 assert.strictEqual(mission.color, 0x247174);
 assert.ok(mission.description.includes('- Rédiger le télégramme'));
 assert.ok(mission.description.includes('Épargne à terme'));
+assert.ok(mission.description.includes('**Contrat établi par :** Kane.Santana'));
 assert.ok(mission.description.includes('lui sera versée le 24/11/1904'));
 assert.ok(!mission.description.includes('est due le 24/11/1904'));
 assert.ok(mission.title.includes('EPT-BW-0001'));
 assert.ok(!mission.title.includes('Épargne à terme'));
 const pawnMission = forms.missionEmbed(
-  { agency: 'blackwater', dossier_number: 'PG-BW-0001', prenom: 'Kane', nom: 'Santana', telegram: '66110' },
+  { agency: 'blackwater', dossier_number: 'PG-BW-0001', prenom: 'Kane', nom: 'Santana', telegram: '66110', banquier_username: 'Ada.Lovelace' },
   { collection: 'pret_pawn_loans', date: '1904-11-03', amount: 115 }
 );
+assert.ok(pawnMission.description.includes('**Contrat établi par :** Ada.Lovelace'));
 assert.ok(pawnMission.description.includes('objet remis en gage'));
 assert.ok(pawnMission.description.includes('Banque du Texas'));
 assert.ok(pawnMission.description.includes('03/11/1904'));

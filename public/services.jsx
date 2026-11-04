@@ -610,7 +610,7 @@ function OfferBoard({ kicker, title, note, action, rows, tabs, categoryOf, prese
 function ficheLine(label, value, color) {
   return <p key={label}>{label} : <b style={color ? { color } : undefined}>{value || '—'}</b></p>;
 }
-function FicheShell({ reference, title, telegram, agencyLabel, onBack, badges, left, right, children, actions }) {
+function FicheShell({ reference, title, telegram, agencyLabel, author, onBack, badges, left, right, children, actions }) {
   return <div>
     <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#4d8fbd', cursor: 'pointer', marginBottom: 16 }}>← Retour</button>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
@@ -626,6 +626,7 @@ function FicheShell({ reference, title, telegram, agencyLabel, onBack, badges, l
     <div className="bvh-loan-detail-summary">
       <div>
         <p>📱 {telegram || '—'}</p>
+        <p>🏦 {author || '—'}</p>
         <p>Agence : <b>{agencyLabel || '—'}</b></p>
         {left}
       </div>
@@ -928,6 +929,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       title={card.name}
       telegram={card.telegram}
       agencyLabel={card.agencyLabel}
+      author={selected.created_by_username || selected.banquier_username || ''}
       onBack={leaveFiche}
       left={sides.left.map(([label, value]) => ficheLine(label, value))}
       right={sides.right.map(([label, value, color]) => ficheLine(label, value, color))}
@@ -1511,6 +1513,7 @@ function LifeDesk(props) {
       title={`${selected.subscriber_first_name || ''} ${selected.subscriber_last_name || ''}`.trim() || '—'}
       telegram={selected.subscriber_telegram}
       agencyLabel={agencyName(selected.agency)}
+      author={selected.created_by_username || ''}
       onBack={leaveLife}
       left={[
         ficheLine('Bénéficiaire', beneficiary || '—'),
