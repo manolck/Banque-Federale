@@ -2558,7 +2558,10 @@ function investorRanking(sources, clients, agency){
     current.capital=moneyNow(current.capital+capital);
     groups.set(key, current);
   };
-  (sources.funds||[]).forEach(row=>add(row, fundCapitalNow(row), 'fonds'));
+  (sources.funds||[]).forEach(row=>{
+    if(String(row?.status||'').trim().toLowerCase()==='pause') return;
+    add(row, fundCapitalNow(row), 'fonds');
+  });
   (sources.life||[]).forEach(row=>add(row, lifeCapitalNow(row), 'vie', 'subscriber'));
   (sources.term||[]).forEach(row=>add(row, termCapitalNow(row), 'terme'));
   (sources.goldstein||[]).forEach(row=>add(row, moneyNow(row.balance), 'goldstein'));
