@@ -102,6 +102,14 @@ function serviceNotice(service, action, row) {
   if (service === 'speculative_funds' && action === 'resume') {
     return notice('Reprise', ['Le fonds est de nouveau ouvert.'], GREEN, row);
   }
+  if (service === 'speculative_funds' && action === 'change_tier') {
+    return notice('Changement de palier', [
+      line('Ancien palier', row.previous_tier || '—'),
+      line('Nouveau palier', row.tier || '—'),
+      line('Capital', moneyFr(row.capital_balance != null ? row.capital_balance : row.amount)),
+      'Le dossier suit désormais les résultats de marché du nouveau palier.'
+    ], GOLD, row);
+  }
   if (service === 'pawn_loans' && action === 'mark_paid') {
     return notice('Paiement validé', [
       line('Somme', moneyFr(row.amount_due || row.repayment || row.amount))

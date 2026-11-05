@@ -383,6 +383,14 @@ const fundCloseAction = actions.serviceNotice('speculative_funds', 'close', {
 assert.ok(fundCloseAction.title.includes('Clôture — fonds'));
 assert.strictEqual(fundCloseAction.color, 0xff0000);
 assert.strictEqual(fundCloseAction.mention, '@Réserve fédérale');
+const fundTierChange = actions.serviceNotice('speculative_funds', 'change_tier', {
+  full_name: 'Ada Lovelace', dossier_number: 'FS-000001', status: 'ouvert',
+  previous_tier: 'Palier I', tier: 'Palier II', capital_balance: 2500
+});
+assert.ok(fundTierChange.title.includes('Changement de palier'));
+assert.ok(fundTierChange.description.includes('Palier I'));
+assert.ok(fundTierChange.description.includes('Palier II'));
+assert.strictEqual(fundTierChange.color, 0xd7a64d);
 const loanBase = {
   prenom: 'Kane',
   nom: 'Santana',

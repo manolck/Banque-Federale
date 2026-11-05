@@ -96,6 +96,19 @@ function createServiceRoute(name) {
         } else {
           patch = { status: 'ouvert' };
         }
+      } else if (body.action === 'change_tier') {
+        if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });
+        if (current.data.status === 'clos' || current.data.status === 'paye') {
+          return json(res, 409, { error: 'Un dossier clôturé ne change pas de palier.' });
+        }
+        const tier = String(body.tier || '').trim();
+        if (!['Palier I', 'Palier II', 'Palier III'].includes(tier)) {
+          return json(res, 400, { error: 'Le palier est I, II ou III.' });
+        }
+        if (tier === String(current.data.tier || '').trim()) {
+          return json(res, 400, { error: 'Ce dossier est déjà sur ce palier.' });
+        }
+        patch = { tier, previous_tier: current.data.tier || '' };
       } else if (body.discord_url) {
         if (!discordUrlOk(body.discord_url)) return json(res, 400, { error: 'Lien Discord invalide.' });
         patch = { discord_url: body.discord_url, discord_posted_at: null };
@@ -103,7 +116,7 @@ function createServiceRoute(name) {
         return json(res, 400, { error: 'Action inconnue.' });
       }
       const next = { ...current.data, ...patch };
-      if (name === 'speculative_funds' && (body.action === 'deposit' || body.action === 'withdraw' || body.action === 'pause' || body.action === 'resume' || body.action === 'close')) {
+      if (name === 'speculative_funds' && (body.action === 'deposit' || body.action === 'withdraw' || body.action === 'pause' || body.action === 'resume' || body.action === 'close' || body.action === 'change_tier')) {
         const { ensureFundDiscordUrl } = require('./fonds_forum_sync');
         await ensureFundDiscordUrl(next);
         if (next.discord_url && next.discord_url !== current.data.discord_url) {
@@ -112,6 +125,8 @@ function createServiceRoute(name) {
         }
       }
       const embed = serviceNotice(name, body.action, next);
+      // previous_tier ne sert qu’à la notice Discord, pas au stockage.
+      if (patch.previous_tier !== undefined) delete patch.previous_tier;
       Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
       if (updated.error) return json(res, 500, { error: updated.error.message });

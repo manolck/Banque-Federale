@@ -729,7 +729,7 @@ function serviceOrder(service) {
 
 function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave, formOnly }) {
   const { useState, useEffect } = BFReact;
-  const { Btn, Inp } = bfKit();
+  const { Btn, Inp, Select } = bfKit();
   const spec = BF_SERVICES[service];
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(() => {
@@ -749,6 +749,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const [movement, setMovement] = useState('');
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [tierDraft, setTierDraft] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -771,6 +772,9 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     const found = rows.find((row) => String(row.id) === String(focusId));
     if (found) setSelected(found);
   }, [focusId, rows]);
+  useEffect(() => {
+    setTierDraft(selected && selected.tier ? selected.tier : 'Palier I');
+  }, [selected && selected.id, selected && selected.tier]);
   useEffect(() => {
     if (!createFor || !createFor.id) return;
     const next = fillFromClient(spec.blank(), createFor, spec.clientMode || 'person');
@@ -940,6 +944,20 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
         {service === 'speculative_funds' && selected.status === 'pause' && <Btn disabled={busy} onClick={() => act('resume')}>Reprendre</Btn>}
         {service === 'speculative_funds' && selected.status !== 'pause' && selected.status !== 'clos' && selected.status !== 'paye' && <Btn color="#555" disabled={busy} onClick={() => act('pause')}>Mettre en pause</Btn>}
         {service === 'speculative_funds' && selected.status !== 'clos' && selected.status !== 'paye' && <>
+          <Select label="Palier" value={tierDraft || selected.tier || 'Palier I'} onChange={(event) => setTierDraft(event.target.value)}>
+            <option>Palier I</option>
+            <option>Palier II</option>
+            <option>Palier III</option>
+          </Select>
+          <Btn
+            color="#555"
+            disabled={busy || !tierDraft || tierDraft === selected.tier}
+            onClick={async () => {
+              if (!tierDraft || tierDraft === selected.tier) return;
+              if (!window.confirm(`Passer le dossier de ${selected.tier || '—'} à ${tierDraft} ? Un avis Discord sera publié.`)) return;
+              await act('change_tier', { tier: tierDraft });
+            }}
+          >Changer de palier</Btn>
           <Inp label="Montant à ajouter" type="number" value={movement} onChange={(event) => setMovement(event.target.value)} />
           <Btn disabled={busy} onClick={() => moveFunds('deposit')}>Ajouter des fonds</Btn>
           <Btn color="#8b642c" disabled={busy || !(bfFundPosition(selected).capital > 0)} onClick={openFundWithdraw}>Retirer</Btn>
