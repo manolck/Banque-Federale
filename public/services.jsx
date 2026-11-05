@@ -1554,9 +1554,13 @@ function LifeDesk(props) {
         ficheLine('Prochaine échéance', next ? `${fDate(next.date)} · ${fCur(next.amount)}` : 'Terminées')
       ]}
       actions={<>
-        <Btn color="#8b642c" onClick={() => act('request_closure')}>Demander la clôture</Btn>
+        {!closed && selected.status !== 'closure_requested' && selected.status !== 'death_reported' && selected.status !== 'under_review' && (
+          <Btn color="#8b642c" onClick={() => act('request_closure')}>Demander la clôture</Btn>
+        )}
         {selected.status === 'closure_requested' && <Btn color="#b94735" onClick={() => act('confirm_closure')}>Confirmer la clôture</Btn>}
-        <Btn onClick={() => act('report_death')}>Signaler un décès</Btn>
+        {!closed && selected.status !== 'death_reported' && selected.status !== 'under_review' && selected.status !== 'closure_requested' && (
+          <Btn onClick={() => act('report_death')}>Signaler un décès</Btn>
+        )}
         {selected.status === 'death_reported' && <Btn onClick={() => act('start_review')}>Ouvrir la vérification</Btn>}
         {selected.status === 'under_review' && <Btn onClick={() => act('pay_beneficiary')}>Payer le bénéficiaire</Btn>}
       </>}

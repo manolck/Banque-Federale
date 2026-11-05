@@ -5,6 +5,7 @@ const { lifeFinancials, lifeAsOf } = require('./money');
 
 const CAPITALS = new Set([1000, 2500, 5000, 7500, 10000]);
 const ACTIVE = new Set(['active','payments_complete','placed']);
+const CLOSURE_BLOCKED = new Set(['closed','paid_to_beneficiary','cancelled','death_reported','under_review']);
 const STATUSES = new Set([...ACTIVE,'closure_requested','closed','death_reported','under_review','paid_to_beneficiary','cancelled']);
 
 function clean(value, max = 500){ return String(value ?? '').trim().slice(0, max); }
@@ -31,7 +32,21 @@ function schedule(capital,start){
 function financials(contract){
   return lifeFinancials(contract && contract.payments, lifeAsOf(contract));
 }
-function normalize(row){return {...row,payments:Array.isArray(row.payments)?row.payments:[],financials:financials(row)};}
+function lifeStatus(row){
+  const status = String(row && row.status || '').trim();
+  return status || 'active';
+}
+function normalize(row){
+  return {
+    ...row,
+    status: lifeStatus(row),
+    payments: Array.isArray(row.payments) ? row.payments : [],
+    financials: financials(row)
+  };
+}
+function canActOnLife(status){
+  return ACTIVE.has(String(status || '').trim() || 'active');
+}
 async function event(contractId,type,actor,details={}){
   await sb.from('pret_life_insurance_events').insert({contract_id:contractId,event_type:type,actor_username:actor,details});
 }
@@ -94,7 +109,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     const patch={updated_at:new Date().toISOString(),updated_by_username:actor.username}; let details={};
     if(action==='edit'){
       if((current.payments||[]).some(p=>p.status==='paid'))return json(res,409,{error:'Un contrat ayant reçu un versement ne peut plus être modifié.'});
-      if(!ACTIVE.has(current.status))return json(res,409,{error:'Ce contrat ne peut plus être modifié.'});
+      if(!canActOnLife(current.status))return json(res,409,{error:'Ce contrat ne peut plus être modifié.'});
       if(b.agency!==undefined)patch.agency=safeAgency(b.agency);
       if(b.start_date!==undefined){const start=realDate(b.start_date);if(!start)return json(res,400,{error:'Date invalide.'});patch.start_date=start;patch.payments=schedule(Number(current.target_capital),start);}
       if(b.subscriber_telegram!==undefined)patch.subscriber_telegram=clean(b.subscriber_telegram,120)||null;
@@ -106,7 +121,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       if(['closed','paid_to_beneficiary','cancelled'].includes(current.status))return json(res,409,{error:'Ce contrat est déjà soldé ou annulé.'});
       patch.status='cancelled';patch.cancelled_at=new Date().toISOString();patch.cancellation_reason=reason;details={reason};
     }else if(action==='record_payment'){
-      if(!ACTIVE.has(current.status))return json(res,409,{error:'Les versements sont bloqués pour ce statut.'});
+      if(!canActOnLife(current.status))return json(res,409,{error:'Les versements sont bloqués pour ce statut.'});
       const number=Number(b.installment_number),payments=[...(current.payments||[])],index=payments.findIndex(p=>Number(p.number)===number);
       if(index<0)return json(res,400,{error:'Échéance invalide.'}); if(payments[index].status==='paid')return json(res,409,{error:'Cette échéance est déjà payée.'});
       payments[index]={...payments[index],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor.username};
@@ -114,7 +129,13 @@ module.exports=(req,res)=>handler(req,res,async()=>{
       const fin=require('./money').lifeFinancials(payments);
       details={installment_number:number,amount:payments[index].amount,week_interest:fin.last_interest,interest_total:fin.interest,balance:fin.balance};
     }else if(action==='request_closure'){
-      if(!ACTIVE.has(current.status))return json(res,409,{error:'Ce contrat ne peut pas être clôturé volontairement.'});
+      const status = lifeStatus(current);
+      if (String(current.status || '').trim() === 'closure_requested') {
+        return json(res, 409, { error: 'Une demande de clôture est déjà en attente de validation.' });
+      }
+      if (CLOSURE_BLOCKED.has(status) || !canActOnLife(status)) {
+        return json(res, 409, { error: 'Ce contrat ne peut pas être clôturé volontairement.' });
+      }
       const f=financials(current),fee=money(f.balance*0.15);patch.status='closure_requested';patch.closure_fee=fee;patch.closure_net_amount=money(f.balance-fee);details={...f,fee,net:patch.closure_net_amount};
     }else if(action==='confirm_closure'){
       if(current.status!=='closure_requested')return json(res,409,{error:'Aucune clôture volontaire en attente.'});patch.status='closed';patch.closed_at=new Date().toISOString();

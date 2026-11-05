@@ -33,7 +33,7 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     if(!clientId||![1000,2500,5000,7500,10000].includes(capital)||!validDate(start)||!clean(b.beneficiary_first_name)||!clean(b.beneficiary_last_name))return json(res,400,{error:'Données de création incomplètes.'});
     const {data:client,error:ce}=await sb.from('pret_clients').select('id,prenom,nom,telegram').eq('id',clientId).maybeSingle();if(ce)return json(res,500,{error:ce.message});if(!client)return json(res,404,{error:'Client introuvable.'});
     const a=agency(b.agency),amount=money(capital/8),payments=Array.from({length:8},(_,i)=>({number:i+1,date:addDays(start,i*7),amount,status:'pending',paid_at:null}));
-    const payload={contract_number:await numberFor(),agency:a,subscriber_client_id:client.id,subscriber_first_name:clean(client.prenom),subscriber_last_name:clean(client.nom),subscriber_telegram:clean(client.telegram)||null,beneficiary_first_name:clean(b.beneficiary_first_name),beneficiary_last_name:clean(b.beneficiary_last_name),beneficiary_telegram:clean(b.beneficiary_telegram)||null,target_capital:capital,weekly_payment:amount,interest_rate_weekly:.05,start_date:start,last_due:addDays(start,49),payments,interest_keys:{},created_by_username:actor};
+    const payload={contract_number:await numberFor(),status:'active',agency:a,subscriber_client_id:client.id,subscriber_first_name:clean(client.prenom),subscriber_last_name:clean(client.nom),subscriber_telegram:clean(client.telegram)||null,beneficiary_first_name:clean(b.beneficiary_first_name),beneficiary_last_name:clean(b.beneficiary_last_name),beneficiary_telegram:clean(b.beneficiary_telegram)||null,target_capital:capital,weekly_payment:amount,interest_rate_weekly:.05,start_date:start,last_due:addDays(start,49),payments,interest_keys:{},created_by_username:actor};
     const {data,error}=await sb.from('pret_life_insurance_contracts').insert(payload).select().single();if(error)return json(res,500,{error:error.message});await audit(data.id,'contract_created',actor,{target_capital:capital});return json(res,201,out(data));
   }
   if(req.method==='PUT'){
@@ -45,13 +45,18 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     if(action==='cancel'){
       const reason=clean(b.reason,500);if(!reason)return json(res,400,{error:'Motif obligatoire.'});if(['closed','paid_to_beneficiary','cancelled'].includes(c.status))return json(res,409,{error:'Contrat déjà soldé ou annulé.'});patch.status='cancelled';patch.cancelled_at=new Date().toISOString();patch.cancellation_reason=reason;details={reason};
     }else if(action==='record_payment'){
-      if(!['active','payments_complete','placed'].includes(c.status))return json(res,409,{error:'Versements bloqués pour ce statut.'});
+      const openStatus=String(c.status||'').trim()||'active';
+      if(!['active','payments_complete','placed'].includes(openStatus))return json(res,409,{error:'Versements bloqués pour ce statut.'});
       const number=Number(b.installment_number),payments=[...(c.payments||[])],i=payments.findIndex(p=>Number(p.number)===number);
       if(i<0)return json(res,400,{error:'Échéance invalide.'});if(payments[i].status==='paid')return json(res,409,{error:'Échéance déjà payée.'});
       payments[i]={...payments[i],status:'paid',paid_at:new Date().toISOString(),recorded_by:actor};patch.payments=payments;patch.status=payments.every(p=>p.status==='paid')?'payments_complete':'active';
       const fin=financials({...c,payments});details={installment_number:number,amount:payments[i].amount,week_interest:fin.last_interest,interest_total:fin.interest,balance:fin.balance};
     }else if(action==='request_closure'){
-      if(!['active','payments_complete','placed'].includes(c.status))return json(res,409,{error:'Clôture impossible pour ce statut.'});const f=financials(c),fee=money(f.balance*.15);patch.status='closure_requested';patch.closure_fee=fee;patch.closure_net_amount=money(f.balance-fee);details={...f,fee,net:patch.closure_net_amount};
+      const status=String(c.status||'').trim();
+      if(status==='closure_requested')return json(res,409,{error:'Une demande de clôture est déjà en attente.'});
+      if(['closed','paid_to_beneficiary','cancelled','death_reported','under_review'].includes(status))return json(res,409,{error:'Clôture impossible pour ce statut.'});
+      if(status&&!['active','payments_complete','placed'].includes(status))return json(res,409,{error:'Clôture impossible pour ce statut.'});
+      const f=financials(c),fee=money(f.balance*.15);patch.status='closure_requested';patch.closure_fee=fee;patch.closure_net_amount=money(f.balance-fee);details={...f,fee,net:patch.closure_net_amount};
     }else if(action==='confirm_closure'){
       if(c.status!=='closure_requested')return json(res,409,{error:'Aucune clôture en attente.'});patch.status='closed';patch.closed_at=new Date().toISOString();
     }else if(action==='report_death'){
