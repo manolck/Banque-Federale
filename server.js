@@ -42,7 +42,12 @@ function sendFile(res, file) {
       res.end('Introuvable');
       return;
     }
-    res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream');
+    const ext = path.extname(file);
+    res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
+    if (ext === '.html' || ext === '.jsx' || ext === '.js' || ext === '.css') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+      res.setHeader('Pragma', 'no-cache');
+    }
     res.end(body);
   });
 }
