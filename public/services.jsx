@@ -1022,9 +1022,11 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
           </FormPopup>;
         })()}
         {termOpen && <>
-          <Btn color="#4a9eff" disabled={busy || selected.validated} onClick={() => act('validate_dossier')}>{selected.validated ? 'Dossier validé' : 'Valider le dossier'}</Btn>
+          <Btn color="#2ecc71" disabled={busy || selected.validated} onClick={() => act('validate_dossier')}>
+            {selected.validated ? 'Paiement validé' : 'Valider le paiement'}
+          </Btn>
           <Btn color="#ff4444" disabled={busy} onClick={() => act('early_withdrawal')}>Retrait anticipé</Btn>
-          <Btn color="#2ecc71" disabled={busy} onClick={() => act('close_term')}>Valider le paiement</Btn>
+          <Btn color="#8b642c" disabled={busy} onClick={() => act('close_term')}>Clôturer (restituer les fonds)</Btn>
           <span style={{ flexBasis: '100%', color: '#c9a567', fontSize: 13 }}>{termHint(selected)}</span>
         </>}
         {spec.payable && selected.status !== 'paye' && selected.status !== 'clos' && selected.status !== 'pause' && <Btn onClick={() => act('mark_paid')}>Valider paiement</Btn>}
