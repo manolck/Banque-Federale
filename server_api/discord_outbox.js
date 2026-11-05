@@ -236,7 +236,8 @@ module.exports = (req, res) => handler(req, res, async () => {
       ['pret_goldstein_booklets', await rows('pret_goldstein_booklets')],
       ['pret_loans', await rows('pret_loans')],
       ['pret_life_insurance_contracts', await rows('pret_life_insurance_contracts')],
-      ['pret_horse_credits', await rows('pret_horse_credits')]
+      ['pret_horse_credits', await rows('pret_horse_credits')],
+      ['pret_fund_payouts', await rows('pret_fund_payouts')]
     ];
     const byName = Object.fromEntries(bundles);
 

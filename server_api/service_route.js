@@ -115,6 +115,14 @@ function createServiceRoute(name) {
       Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
       if (updated.error) return json(res, 500, { error: updated.error.message });
+      if (name === 'speculative_funds' && body.action === 'withdraw' && patch.withdrawal) {
+        try {
+          const { recordWithdrawal } = require('./fund_payouts');
+          await recordWithdrawal(updated.data, patch.withdrawal, actor);
+        } catch (error) {
+          console.error('Remboursement fonds', error.message || error);
+        }
+      }
       await sb.from('pret_service_events').insert({ service: name, record_id: body.id, event_type: body.action || 'update', actor_username: actor.username });
       return json(res, 200, updated.data);
     }

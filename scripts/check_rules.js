@@ -573,6 +573,12 @@ const withdrawTax = money.fundWithdrawalQuote({
 }, 10990.26);
 assert.ok(withdrawTax.basis_out > 9000);
 assert.ok(withdrawTax.tax < 200);
+const fundPayouts = require('../server_api/fund_payouts');
+assert.strictEqual(fundPayouts.canManage({ role_code: 'DIRECTOR' }), true);
+assert.strictEqual(fundPayouts.canManage({ role_code: 'DEPUTY_DIRECTOR' }), true);
+assert.strictEqual(fundPayouts.canManage({ role_code: 'TECHNICIAN' }), false);
+assert.strictEqual(fundPayouts.canManage({ role_code: 'BANKER' }), false);
+assert.strictEqual(fundPayouts.COLLECTION, 'pret_fund_payouts');
 const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_balance: 1000, statements: [] }, '2026-11-01', { III: { final: -3, regime: 'krach', label: 'Panique sur les marchés' } });
 assert.strictEqual(lost.capital_balance, 970);
 const tuesday = new Date('2026-10-27T19:00:00Z');

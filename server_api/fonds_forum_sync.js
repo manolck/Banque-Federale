@@ -72,6 +72,14 @@ async function autoApplyMovement(fund, item, threadUrl) {
   const updated = await sb.from(FUNDS).update(patch).eq('id', fund.id);
   if (updated.error) throw new Error(updated.error.message);
   Object.assign(fund, patch);
+  if (item.kind === 'add_withdrawal' && patch.withdrawal) {
+    try {
+      const { recordWithdrawal } = require('./fund_payouts');
+      await recordWithdrawal(fund, patch.withdrawal, { username: fund.created_by_username || 'discord-sync' });
+    } catch (error) {
+      console.error('Remboursement fonds (forum)', error.message || error);
+    }
+  }
   return patch;
 }
 
@@ -168,6 +176,14 @@ async function applyOne(actor, id) {
   }
   const updated = await sb.from(FUNDS).update(patch).eq('id', fund.data.id);
   if (updated.error) return { status: 500, error: updated.error.message };
+  if (proposal.kind === 'add_withdrawal' && built.patch.withdrawal) {
+    try {
+      const { recordWithdrawal } = require('./fund_payouts');
+      await recordWithdrawal({ ...fund.data, ...built.patch }, built.patch.withdrawal, actor);
+    } catch (error) {
+      console.error('Remboursement fonds (synchro)', error.message || error);
+    }
+  }
   const closed = await sb.from(PROPOSALS).update({ status: 'applied', resolved_by_username: actor.username, resolved_at: new Date().toISOString() }).eq('id', proposal.id);
   if (closed.error) return { status: 500, error: closed.error.message };
   await logAction(actor, 'synchro_forum_fonds', { dossier: proposal.dossier_number, kind: proposal.kind, patch: built.patch.status || { capital_balance: built.patch.capital_balance } });

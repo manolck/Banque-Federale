@@ -1169,6 +1169,7 @@ const hasPermission=(u,p)=>roleInfo(u).permissions.includes(p);
 // Les droits bank.* ne sont pas listés côté navigateur : même règle que le serveur (permissions.js). Le serveur reste juge.
 const canWriteBank=u=>['TECHNICIAN','DIRECTOR','DEPUTY_DIRECTOR','EXECUTIVE_ASSISTANT','BANK_MANAGER','BANKER'].includes(roleCode(u));
 const canOpenDirection=u=>['TECHNICIAN','DIRECTOR','DEPUTY_DIRECTOR'].includes(roleCode(u));
+const canManageFundPayouts=u=>['DIRECTOR','DEPUTY_DIRECTOR'].includes(roleCode(u));
 const ROLE_OPTIONS=Object.entries(ROLE_DEFINITIONS).map(([code,info])=>({code,...info}));
 const fCur=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(Number(n)||0);
 function rpYear(year){const value=Number(year);return value>=2000?1904+(value-2026):value;}
@@ -1213,6 +1214,7 @@ const api={
  fundSync:()=>call('/api/fonds_forum_sync?actualisation='+Date.now()), fundSyncAct:body=>call('/api/fonds_forum_sync',{method:'PUT',body:JSON.stringify(body)}),
  clientRepair:()=>call('/api/client_link_repair?actualisation='+Date.now()), clientRepairAct:body=>call('/api/client_link_repair',{method:'PUT',body:JSON.stringify(body)}),
  agentSalaries:()=>call('/api/agent_salaries?actualisation='+Date.now()), saveAgentSalary:(body,method='POST')=>call('/api/agent_salaries',{method,body:JSON.stringify(body)}),
+ fundPayouts:()=>call('/api/fund_payouts?actualisation='+Date.now()), fundPayoutAct:body=>call('/api/fund_payouts',{method:'PUT',body:JSON.stringify(body)}),
  service:name=>call('/api/'+name+'?actualisation='+Date.now()), saveService:(name,body,method='POST')=>call('/api/'+name,{method,body:JSON.stringify(body)}), deleteService:(name,id)=>call('/api/'+name,{method:'DELETE',body:JSON.stringify({id})})
 };
 function payment(capital,rate,n){capital=Number(capital);rate=Number(rate)/100;n=parseInt(n);if(!capital||!n)return 0;if(!rate)return capital/n;return capital*rate/(1-Math.pow(1+rate,-n));}
@@ -2990,6 +2992,71 @@ function SalaryForm({agent,onClose,onSaved,notify}){
     </div>
   </div>;
 }
+function FundPayoutPage({notify,onOpenFund}){
+  const[rows,setRows]=useState(null),[err,setErr]=useState(''),[query,setQuery]=useState(''),[tab,setTab]=useState('open');
+  async function load(){
+    try{const data=await api.fundPayouts();setRows(Array.isArray(data)?data:[]);setErr('')}
+    catch(e){setErr(e.message||'Chargement impossible.');setRows([])}
+  }
+  useEffect(()=>{load()},[]);
+  function copy(label,text){
+    if(!text)return notify('Rien à copier.');
+    copyText(text).then(()=>notify(label+' copié : '+text)).catch(()=>notify('Copie impossible, sélectionne le texte à la main.'));
+  }
+  async function archive(row,action){
+    try{
+      const saved=await api.fundPayoutAct({id:row.id,action});
+      setRows(list=>list.map(x=>x.id===saved.id?saved:x));
+      notify(action==='archive'?'Demande archivée':'Demande rouverte');
+    }catch(e){notify(e.message||'Action impossible.')}
+  }
+  const q=query.trim().toLowerCase();
+  const filtered=(rows||[]).filter(r=>{
+    const archived=r.archived||r.status==='archived';
+    if(tab==='open'?archived:!archived)return false;
+    if(!q)return true;
+    return [r.client_name,r.dossier_number,r.banker_username,r.bank_account].join(' ').toLowerCase().includes(q);
+  });
+  const openCount=(rows||[]).filter(r=>!(r.archived||r.status==='archived')).length;
+  const archivedCount=(rows||[]).length-openCount;
+  const toPay=(rows||[]).filter(r=>!(r.archived||r.status==='archived')).reduce((n,r)=>n+Number(r.amount_net||0),0);
+  const fees=(rows||[]).filter(r=>!(r.archived||r.status==='archived')).reduce((n,r)=>n+Number(r.bank_fee||0),0);
+  return <div className="vx-home">
+    <div className="bvh-topbar">
+      <div><small>Direction · remboursements</small><h1>Remboursements fonds</h1><p style={{color:'#d8bc78',marginTop:4}}>Retraits à verser. Clique sur le compte ou la somme pour copier. Un rappel Discord part à chaque nouveau retrait.</p></div>
+      <div className="vx-hero-actions">
+        <button type="button" className="vx-btn quiet" onClick={load}>Actualiser</button>
+      </div>
+    </div>
+    <div className="vx-card vx-summary">
+      <div><b>{openCount}</b><span>À traiter</span></div>
+      <div><b>{fCur(toPay)}</b><span>À verser</span></div>
+      <div><b>{fCur(fees)}</b><span>Intérêts banque</span></div>
+      <div><b>{archivedCount}</b><span>Archives</span></div>
+    </div>
+    <div className="vx-tabs" style={{margin:'16px 0'}}>
+      <button type="button" className={tab==='open'?'on':''} onClick={()=>setTab('open')}>À traiter ({openCount})</button>
+      <button type="button" className={tab==='archived'?'on':''} onClick={()=>setTab('archived')}>Archives ({archivedCount})</button>
+    </div>
+    <Inp placeholder="Client, dossier, banquier, compte…" value={query} onChange={e=>setQuery(e.target.value)} style={{margin:'0 0 18px',maxWidth:520}}/>
+    {err&&<p className="vx-lead" style={{color:'#ffb0a6'}}>⚠ {err}</p>}
+    {rows===null?<p className="vx-lead">Chargement…</p>:filtered.length===0?<p className="vx-lead">{(rows||[]).length?(tab==='open'?'Aucune demande en cours.':'Aucune archive.'):'Aucun remboursement enregistré.'}</p>:<div className="sal-list">
+      {filtered.map(r=><div className="sal-row" key={r.id}>
+        <div className="sal-main">
+          <button type="button" className="sal-chip sal-link" title="Ouvrir le dossier" onClick={()=>onOpenFund?.(r.dossier_number,r.fund_id)}>{r.dossier_number||'—'}</button>
+          <div className="sal-name"><b>{r.client_name||'—'}</b><small>Banquier · {r.banker_username||'—'}{r.withdrawal_on?` · ${fDate(r.withdrawal_on)}`:''}</small></div>
+          <button type="button" className="sal-chip sal-copy" title="Copier le compte" onClick={()=>copy('Compte',r.bank_account)}>🏛️ {r.bank_account||'—'}</button>
+          <button type="button" className="sal-chip sal-copy sal-money" title="Copier la somme à verser" onClick={()=>copy('Somme',salaryPlain(r.amount_net))}>💰 {fCur(r.amount_net)}</button>
+          <span className="sal-chip" title="Intérêts perçus par la banque">Intérêts {fCur(r.bank_fee)}</span>
+          <span className={'sal-state '+(r.archived||r.status==='archived'?'paid':'due')}>{r.archived||r.status==='archived'?'Archivé':'À verser'}</span>
+          {!(r.archived||r.status==='archived')
+            ?<button type="button" className="sal-pay" onClick={()=>archive(r,'archive')}>Archiver</button>
+            :<button type="button" className="sal-pay undo" onClick={()=>archive(r,'unarchive')}>Rouvrir</button>}
+        </div>
+      </div>)}
+    </div>}
+  </div>;
+}
 function SalaryPage({notify}){
   const[rows,setRows]=useState(null),[err,setErr]=useState(''),[form,setForm]=useState(null),[query,setQuery]=useState(''),[menuId,setMenuId]=useState(null);
   async function load(){
@@ -3306,7 +3373,7 @@ function LifeInsurancePage(props){
 }
 
 function App(){
-  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('dashboard'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
+  const[me,setMe]=useState(null),[loading,setLoading]=useState(true),[page,setPage]=useState('dashboard'),[footerPage,setFooterPage]=useState(null),[toast,setToast]=useState(''),[loans,setLoans]=useState([]),[clients,setClients]=useState([]),[appointments,setAppointments]=useState([]),[lifeInsurance,setLifeInsurance]=useState([]),[books,setBooks]=useState({}),[horses,setHorses]=useState([]),[users,setUsers]=useState([]),[logs,setLogs]=useState([]),[menuOpen,setMenuOpen]=useState(false),[refreshing,setRefreshing]=useState(false),[loanDraftActive,setLoanDraftActive]=useState(false),[clientFocus,setClientFocus]=useState(null),[loanPrefill,setLoanPrefill]=useState(null),[loanFocus,setLoanFocus]=useState(null),[fundFocus,setFundFocus]=useState(null),[agendaPrefill,setAgendaPrefill]=useState(null),[activeAgence,setActiveAgence]=useState('toutes');
   const notify=m=>{setToast(m);setTimeout(()=>setToast(''),3000)};
   window.BVH.rememberClient=client=>{if(!client||!client.id)return;setClients(current=>current.some(item=>String(item.id)===String(client.id))?current:[client,...current]);};
   async function loadAll(user){
@@ -3368,6 +3435,7 @@ function App(){
   if(loading)return <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}>Chargement…</div>;
   if(!me)return <Login onLogin={onLogin}/>;
   const menu=[['dashboard','','Banque'],['services','','Services'],['clients','','Clients'],['agenda','','Agenda']];
+  if(canManageFundPayouts(me)) menu.push(['fondspayouts','','Remboursements fonds']);
   if(canOpenDirection(me)) menu.push(['salaires','','Salaire agents'],['clientrepair','','Fiches manquantes'],['users','','Comptes'],['logs','','Journal']);
   async function refreshSharedData(){
     if(!me) return;
@@ -3396,6 +3464,14 @@ function App(){
     if(!loanId)return;
     setLoanFocus(loanId);
     choosePage('prets');
+  }
+  function openFundDossier(dossierNumber, fundId){
+    const list=books.speculative_funds||[];
+    const found=list.find(row=>String(row.id)===String(fundId))
+      || list.find(row=>String(row.dossier_number)===String(dossierNumber));
+    if(!found){notify('⚠ Dossier '+ (dossierNumber||'') +' introuvable dans le registre.');return;}
+    setFundFocus(found.id);
+    choosePage('fonds');
   }
   function openQuickAppointment(client){
     setAgendaPrefill(client);
@@ -3426,7 +3502,7 @@ function App(){
       {refreshing&&<div className="vx-refresh">Actualisation…</div>}
       {SERVICE_PAGE_LIST.includes(page)&&<button type="button" className="vx-btn quiet vx-back" onClick={()=>choosePage('services')}>← Retour aux services</button>}
       {page==='services'&&<ServicesPage loans={loans} lifeInsurance={lifeInsurance} books={books} horses={horses} activeAgence={activeAgence} clients={clients} notify={notify} setLoans={setLoans} setLifeInsurance={setLifeInsurance} onRefresh={()=>loadAll(me)} onOpenPage={choosePage}/>}
-      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fondsync'&&<FundSyncPage notify={notify} canWrite={canWriteBank(me)} onRefresh={()=>loadAll(me)}/>} {page==='clientrepair'&&canOpenDirection(me)&&<ClientRepairPage notify={notify} onRefresh={()=>loadAll(me)}/>} {page==='salaires'&&canOpenDirection(me)&&<SalaryPage notify={notify}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
+      {page==='dashboard'&&<Dashboard loans={loansForActiveBank} clients={clients} funds={books.speculative_funds||[]} lifeInsurance={lifeInsurance} termSavings={books.term_savings||[]} goldstein={books.goldstein_booklets||[]} activeAgence={activeAgence} me={me} onMark={mark} onLoanUpdate={u=>setLoans(loans.map(x=>x.id===u.id?u:x))} appointments={appointments} onOpenAgenda={()=>choosePage('agenda')} onOpenClient={openClientDossier} onOpenLoan={openLoanDetails} onOpenPage={choosePage} notify={notify}/>} {page==='prets'&&<LoansPage loans={loans} clients={clients} setLoans={setLoans} notify={notify} onLoanDraftChange={setLoanDraftActive} openForClient={loanPrefill} onQuickLoanHandled={()=>setLoanPrefill(null)} openLoanId={loanFocus} onOpenLoanHandled={()=>setLoanFocus(null)} me={me} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='assurances'&&<LifeInsurancePage contracts={lifeInsurance} setContracts={setLifeInsurance} clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='clients'&&<ClientsPage clients={clients} setClients={setClients} loans={loans} setLoans={setLoans} appointments={appointments} lifeInsurance={lifeInsurance} setLifeInsurance={setLifeInsurance} books={books} horses={horses} notify={notify} openClientId={clientFocus} onOpenClientHandled={()=>setClientFocus(null)} onQuickAppointment={openQuickAppointment} me={me} activeAgence={activeAgence} onRefresh={()=>loadAll(me)}/>} {page==='agenda'&&<AgendaPage appointments={appointments} setAppointments={setAppointments} clients={clients} me={me} notify={notify} openForClient={agendaPrefill} onQuickAppointmentHandled={()=>setAgendaPrefill(null)}/>} {page==='hippique'&&<HorseCreditPage clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fonds'&&window.BF&&<window.BF.ServiceDesk service="speculative_funds" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence} focusId={fundFocus} onLeave={()=>setFundFocus(null)}/>} {page==='gage'&&window.BF&&<window.BF.ServiceDesk service="pawn_loans" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='consigne'&&window.BF&&<window.BF.ServiceDesk service="consigne_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='terme'&&window.BF&&<window.BF.ServiceDesk service="term_savings" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='paie'&&window.BF&&<window.BF.ServiceDesk service="payroll_contracts" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='goldstein'&&window.BF&&<window.BF.ServiceDesk service="goldstein_booklets" clients={clients} notify={notify} activeAgence={activeAgence} onActiveAgenceChange={setActiveAgence}/>} {page==='fondsync'&&<FundSyncPage notify={notify} canWrite={canWriteBank(me)} onRefresh={()=>loadAll(me)}/>} {page==='fondspayouts'&&canManageFundPayouts(me)&&<FundPayoutPage notify={notify} onOpenFund={openFundDossier}/>} {page==='clientrepair'&&canOpenDirection(me)&&<ClientRepairPage notify={notify} onRefresh={()=>loadAll(me)}/>} {page==='salaires'&&canOpenDirection(me)&&<SalaryPage notify={notify}/>} {page==='users'&&canOpenDirection(me)&&<UserPanel me={me} users={users} setUsers={setUsers} notify={notify}/>} {page==='logs'&&canOpenDirection(me)&&<LogsPage logs={logs}/>}
     <SiteFooter onOpen={setFooterPage}/>
     </main>
   </div>
