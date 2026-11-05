@@ -199,7 +199,7 @@ async function postNotice(client, item) {
   if (content.includes('@')) {
     const guild = channel.guild || (channel.guildId ? await client.guilds.fetch(channel.guildId) : null);
     if (guild && !guild.roles.cache.size) await guild.roles.fetch();
-    for (const name of ['Réserve fédérale', 'Texas', 'Louisiane']) {
+    for (const name of ['Réserve fédérale', 'Texas', 'Louisiane', 'Directeur']) {
       if (!content.includes(`@${name}`)) continue;
       const ping = await rolePingNamed(guild, name);
       content = content.split(`@${name}`).join(ping);

@@ -412,18 +412,6 @@ assert.ok(lifeClosureAsk.title.includes('Demande de clôture'));
 assert.ok(lifeClosureAsk.description.includes('850'));
 assert.strictEqual(lifeClosureAsk.mention, '@Directeur');
 assert.strictEqual(lifeClosureAsk.color, 0xd7a64d);
-const lifeHeal = require('../server_api/life_insurance').healLifePatch;
-assert.deepStrictEqual(lifeHeal({ status: '', payments: [{ status: 'pending' }] }), { status: 'active' });
-assert.deepStrictEqual(lifeHeal({
-  status: 'active',
-  payments: Array.from({ length: 8 }, (_, i) => ({ status: 'paid', number: i + 1 }))
-}), { status: 'payments_complete' });
-assert.deepStrictEqual(lifeHeal({
-  status: 'payments_complete',
-  payments: Array.from({ length: 8 }, (_, i) => ({ status: 'paid', number: i + 1 })),
-  interest_keys: { 'placement:1904-11-10': 'posted' }
-}), { status: 'placed' });
-assert.strictEqual(lifeHeal({ status: 'closed', payments: [] }), null);
 const lifeClosureQueued = actions.enqueueNotice(
   { discord_notices: [] },
   lifeClosureAsk

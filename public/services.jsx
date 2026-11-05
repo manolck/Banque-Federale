@@ -1530,26 +1530,6 @@ function LifeDesk(props) {
       notify('⚠ ' + error.message);
     }
   }
-  async function healContracts() {
-    if (busy) return;
-    if (!window.confirm('Actualiser les statuts des assurances-vie déjà présentes (contrats sans statut, versements terminés, placement) ?')) return;
-    try {
-      setBusy(true);
-      const result = await bfKit().api.updateLifeInsurance({ action: 'heal_all' });
-      if (Array.isArray(result && result.contracts)) setContracts(result.contracts);
-      else if (setContracts) {
-        const rows = await bfKit().api.lifeInsurance();
-        setContracts(Array.isArray(rows) ? rows : []);
-      }
-      notify(result && result.updated
-        ? `${result.updated} contrat${result.updated > 1 ? 's' : ''} actualisé${result.updated > 1 ? 's' : ''} sur ${result.total}`
-        : 'Tous les contrats étaient déjà à jour');
-    } catch (error) {
-      notify('⚠ ' + error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
   if (selected) {
     const figures = selected.financials || {};
     const closed = LIFE_CLOSED.has(selected.status);
@@ -1701,10 +1681,7 @@ function LifeDesk(props) {
     {!formOnly && <OfferBoard
       kicker="Protection et placement"
       title="Assurances-vie"
-      action={<div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        <Btn color="#555" disabled={busy} onClick={healContracts}>{busy ? 'Actualisation…' : 'Actualiser les contrats'}</Btn>
-        <Btn disabled={busy} onClick={openContract}>+ Nouveau contrat</Btn>
-      </div>}
+      action={<Btn disabled={busy} onClick={openContract}>+ Nouveau contrat</Btn>}
       rows={(contracts || []).slice().sort((left, right) => {
         const rank = (DUE_RANK[lifeSnapshot(left).category] ?? 9) - (DUE_RANK[lifeSnapshot(right).category] ?? 9);
         if (rank) return rank;
