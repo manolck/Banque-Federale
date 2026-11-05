@@ -213,6 +213,9 @@ module.exports = (req,res)=>handler(req,res, async()=>{
       return json(res,400,{error:'Données prêt incomplètes'});
     }
 
+    if(!String(b.agence || b.bank_code || '').trim()){
+      return json(res,400,{error:'La succursale est obligatoire.'});
+    }
     const agence = safeAgence(b.agence || b.bank_code);
     const bank_code = bankCodeFrom(agence);
 
