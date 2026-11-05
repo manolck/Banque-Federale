@@ -18,7 +18,8 @@ function flags(body, keys) {
   return keys.every((key) => !!body[key]);
 }
 
-async function finish(row, render) {
+async function finish(row, render, actor) {
+  if (actor && actor.username) row.created_by_username = text(actor.username, 80);
   const { stamp } = await rpStamp();
   row.discord_embed = render === 'fonds' ? fondsEmbed(row, stamp) : render(row, stamp);
   row.discord_text = row.discord_embed.description;
@@ -27,12 +28,12 @@ async function finish(row, render) {
   return { row };
 }
 
-async function withDossier(row, render, number) {
+async function withDossier(row, render, number, actor) {
   row.dossier_number = number;
-  return finish(row, render);
+  return finish(row, render, actor);
 }
 
-async function speculative(body) {
+async function speculative(body, actor) {
   const agency = agencyOf(body.agency);
   const tier = text(body.tier, 20);
   if (!['Palier I', 'Palier II', 'Palier III'].includes(tier)) return fail('Le palier est I, II ou III.');
@@ -68,10 +69,10 @@ async function speculative(body) {
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {},
     dossier_number: await nextSerial('pret_speculative_funds', 'dossier_number', 'HCP-')
   };
-  return finish(row, 'fonds');
+  return finish(row, 'fonds', actor);
 }
 
-async function pawn(body) {
+async function pawn(body, actor) {
   const agency = agencyOf(body.agency);
   const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'item_type', 'Le type de bien')].find(Boolean);
   if (missing) return fail(missing);
@@ -89,10 +90,10 @@ async function pawn(body) {
     echeance_date: quoted.echeance_date, amount_due: quoted.repayment, paid: false,
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
-  return finish(row, pawnEmbed);
+  return finish(row, pawnEmbed, actor);
 }
 
-async function consigne(body) {
+async function consigne(body, actor) {
   if (!CONSIGNE_BANKS[body.agency]) return fail('La consigne est ouverte à Blackwater, Rhodes, Valentine, Van Horn, Sunset City et Saint Denis.');
   const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
   if (missing) return fail(missing);
@@ -110,7 +111,7 @@ async function consigne(body) {
     dossier_offered: !!body.dossier_offered, ...quoted, paid: false, payments: [],
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
-  return withDossier(row, consigneEmbed, await nextSerial('pret_consigne_contracts', 'dossier_number', 'C-'));
+  return withDossier(row, consigneEmbed, await nextSerial('pret_consigne_contracts', 'dossier_number', 'C-'), actor);
 }
 
 function payConsigneWeek(row) {
@@ -136,7 +137,7 @@ function payConsigneWeek(row) {
   };
 }
 
-async function term(body) {
+async function term(body, actor) {
   const agency = agencyOf(body.agency);
   const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme')].find(Boolean);
   if (missing) return fail(missing);
@@ -156,7 +157,7 @@ async function term(body) {
     declare_accuracy: true, declare_early: true, declare_silence: true, declare_record: true, declare_death: true, declare_terms: true,
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
-  return withDossier(row, termEmbed, dossier_number);
+  return withDossier(row, termEmbed, dossier_number, actor);
 }
 
 function validateTerm(row) {
@@ -188,7 +189,7 @@ function settleTerm(row, action) {
   };
 }
 
-async function payroll(body) {
+async function payroll(body, actor) {
   const agencies = (Array.isArray(body.agencies) ? body.agencies : []).filter((item) => AGENCIES.includes(item));
   const missing = [requireText(body, 'company_name', 'La raison sociale'), requireText(body, 'patron', 'Le patron'), requireText(body, 'patron_telegram', 'Le télégramme du patron')].find(Boolean);
   if (missing) return fail(missing);
@@ -217,10 +218,10 @@ async function payroll(body) {
     control_fraud: true, control_reserve: true, control_authorities: true,
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
-  return withDossier(row, payrollEmbed, await nextSerial('pret_payroll_contracts', 'dossier_number', 'GP-'));
+  return withDossier(row, payrollEmbed, await nextSerial('pret_payroll_contracts', 'dossier_number', 'GP-'), actor);
 }
 
-async function goldstein(body) {
+async function goldstein(body, actor) {
   const agency = agencyOf(body.agency);
   const missing = [requireText(body, 'prenom', 'Le prénom'), requireText(body, 'nom', 'Le nom'), requireText(body, 'telegram', 'Le télégramme'), requireText(body, 'civility', 'La civilité')].find(Boolean);
   if (missing) return fail(missing);
@@ -239,7 +240,7 @@ async function goldstein(body) {
     movements: [{ type: 'ouverture', amount: money(body.opening_amount), balance_before: 0, balance: quoted.balance, on: body.signed_on }],
     discord_url: text(body.discord_url, 300), discord_notices: [], status: 'ouvert', mission_keys: {}
   };
-  return withDossier(row, goldsteinEmbed, await nextSerial('pret_goldstein_booklets', 'dossier_number', 'LEG-'));
+  return withDossier(row, goldsteinEmbed, await nextSerial('pret_goldstein_booklets', 'dossier_number', 'LEG-'), actor);
 }
 
 function localToday() {

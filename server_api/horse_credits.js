@@ -80,7 +80,10 @@ module.exports = (req,res)=>handler(req,res, async()=>{
     const payload=normalize(b, actor);
     delete payload.created_by_username;
     if(!String(payload.discord_url||'').trim()) delete payload.discord_url;
-    await attachEmbed(payload);
+    const stamped = { ...payload, created_by_username: previous.created_by_username };
+    await attachEmbed(stamped);
+    payload.discord_embed = stamped.discord_embed;
+    payload.discord_text = stamped.discord_text;
     const { horseNotice, enqueueNotice } = require('./discord_actions');
     Object.assign(payload, enqueueNotice({ ...previous, discord_url: payload.discord_url }, horseNotice(previous, payload)));
     const { data, error } = await sb.from('pret_horse_credits').update(payload).eq('id',b.id).select().single();

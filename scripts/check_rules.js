@@ -177,8 +177,10 @@ const term = forms.termEmbed({
   prenom: 'Benjamin', nom: 'Goldstein', agency: 'blackwater', origin: 'Épargne personnelle',
   payment_mode: 'Espèces', weeks: 4, rate: 10, amount: 1000, maturity_amount: 1100,
   early_rate: 20, early_fee: 200, signed_on: '1904-10-27', echeance_date: '1904-11-24',
-  declare_accuracy: true, declare_terms: true
+  declare_accuracy: true, declare_terms: true, created_by_username: 'Kane.Santana'
 }, '27/10/1904');
+assert.ok(term.description.startsWith('#Épargne à Terme — SOUSCRIPTION'));
+assert.ok(term.description.includes('**Contrat établi par :** Kane.Santana'));
 assert.ok(!term.description.includes('[x]'));
 assert.ok(!term.description.includes('[]'));
 assert.ok(term.description.includes('✅ Exactitude des informations'));
@@ -190,11 +192,13 @@ assert.ok(!term.description.includes('Revenus professionnels'));
 assert.ok(term.description.includes('**Durée :** 4 semaines'));
 assert.ok(!term.description.includes('8 semaines'));
 assert.strictEqual(term.color, 0x247174);
-assert.strictEqual(forms.lifeEmbed({
+const lifeOffer = forms.lifeEmbed({
   contract_number: 'AV-000001', agency: 'valentine', subscriber_first_name: 'Ada', subscriber_last_name: 'Lovelace',
   beneficiary_first_name: 'Charles', beneficiary_last_name: 'Babbage', target_capital: 1000, weekly_payment: 125,
-  start_date: '1904-10-01', enrollment: {}
-}, 'stamp').color, 0x247174);
+  start_date: '1904-10-01', enrollment: {}, created_by_username: 'Ada.Lovelace'
+}, 'stamp');
+assert.strictEqual(lifeOffer.color, 0x247174);
+assert.ok(lifeOffer.description.startsWith('**Contrat établi par :** Ada.Lovelace'));
 const mission = forms.missionEmbed({ agency: 'blackwater', dossier_number: 'EPT-BW-0001', prenom: 'Benjamin', nom: 'Goldstein', telegram: '65945', created_by_username: 'Kane.Santana' }, { collection: 'pret_term_savings', date: '1904-11-24', amount: 1100 });
 assert.strictEqual(mission.color, 0x247174);
 assert.ok(mission.description.includes('- Rédiger le télégramme'));
@@ -264,8 +268,10 @@ const loanEmbed = forms.loanEmbed({
   telegram: '65945', adresse: '12 Rue du Port', date_naissance: '1875-12-10',
   nationalite: 'Britannique', civilite: 'Madame', profession: 'Mathématicienne',
   date_creation: '1904-10-27', somme: 400, taux: 10, total_a_rembourser: 440,
-  garanties: 'Titres', echeances: [{ date: '1904-11-03', montant: 220 }]
+  garanties: 'Titres', echeances: [{ date: '1904-11-03', montant: 220 }],
+  banquier_username: 'Kane.Santana'
 }, '27/10/1904 12:00');
+assert.ok(loanEmbed.description.includes('**Contrat établi par :** Kane.Santana'));
 assert.ok(loanEmbed.description.includes('INFORMATIONS PERSONNELLES'));
 assert.ok(loanEmbed.description.includes('12 Rue du Port'));
 assert.ok(loanEmbed.description.includes('Britannique'));
@@ -313,10 +319,12 @@ const horseEmbed = forms.horseEmbed({
   patrimoine: 'Chevaux et titres',
   garanties: 'Titres',
   recommande: true,
-  referent: 'Kane Santana'
+  referent: 'Kane Santana',
+  created_by_username: 'Ada.Lovelace'
 }, '03/11/1904 12:00');
 assert.ok(horseEmbed.title.includes('Crédit hippique'));
 assert.ok(horseEmbed.title.includes('Ada Lovelace'));
+assert.ok(horseEmbed.description.includes('**Contrat établi par :** Ada.Lovelace'));
 assert.ok(horseEmbed.description.includes('INFORMATIONS PERSONNELLES'));
 assert.ok(horseEmbed.description.includes('65945'));
 assert.ok(horseEmbed.description.includes('Éclair Noir'));

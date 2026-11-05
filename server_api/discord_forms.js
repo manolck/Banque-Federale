@@ -89,10 +89,27 @@ function person(row) {
   return `${row.nom || row.subscriber_last_name || row.company_name || ''} ${row.prenom || row.subscriber_first_name || ''}`.trim();
 }
 
+function contractAuthor(row) {
+  return text(row && (row.created_by_username || row.banquier_username), 80) || '—';
+}
+
+function leadWithAuthor(row, lines) {
+  const author = line('Contrat établi par', contractAuthor(row));
+  const body = Array.isArray(lines) ? lines.slice() : [String(lines || '')];
+  if (!body.length) return [author];
+  const first = String(body[0] || '').trim();
+  if (/^#{1,3}\s*\S/.test(first)) {
+    const rest = body.slice(1);
+    if (rest[0] === '') return [body[0], '', author, ...rest];
+    return [body[0], '', author, '', ...rest];
+  }
+  return [author, '', ...body];
+}
+
 function lifeEmbed(row, stamp) {
   const enrollment = row.enrollment || {};
   const last = addDays(row.start_date, 49);
-  const description = [
+  const description = leadWithAuthor(row, [
     line('Agence', AGENCY_LABELS[row.agency] || row.agency),
     '',
     '**Souscripteur**',
@@ -139,7 +156,7 @@ function lifeEmbed(row, stamp) {
     '**Validation**',
     line('Statut', 'Police acceptée'),
     line('Huissier de justice fédéral', enrollment.bailiff)
-  ].join('\n');
+  ]).join('\n');
   return {
     title: `Police d'assurance-vie — Dossier ${row.contract_number}`,
     description,
@@ -150,7 +167,7 @@ function lifeEmbed(row, stamp) {
 }
 
 function fondsEmbed(row, stamp) {
-  const description = [
+  const description = leadWithAuthor(row, [
     line('Identité', `${row.civility || ''} ${row.full_name || ''}`),
     line('Date de naissance', dateFr(row.birth_date)),
     line('Nationalité', row.nationality),
@@ -184,7 +201,7 @@ function fondsEmbed(row, stamp) {
       [row.declare_accuracy, 'Exactitude des informations'],
       [row.declare_terms, 'Conditions générales acceptées']
     ])
-  ].join('\n');
+  ]).join('\n');
   return {
     title: `Accusé de réception de souscription — ${row.full_name} (Dossier ${row.dossier_number})`,
     description,
@@ -242,7 +259,7 @@ function loanBirth(row) {
 }
 function loanText(row) {
   const who = `${row.prenom || ''} ${(row.nom || '').toUpperCase()}`.trim();
-  return [
+  return leadWithAuthor(row, [
     `## DÉTAILS PERSONNELS - ${who} ##`,
     '',
     '**INFORMATIONS PERSONNELLES**',
@@ -267,7 +284,7 @@ function loanText(row) {
     ...(Array.isArray(row.echeances) ? row.echeances.map((item, index) =>
       line(`Échéance ${index + 1}`, `${moneyFr(item.montant)} le ${dateFr(item.date)}`)
     ) : [])
-  ].join('\n');
+  ]).join('\n');
 }
 function loanEmbed(row, stamp) {
   const who = `${row.prenom || ''} ${row.nom || ''}`.trim();
@@ -308,7 +325,7 @@ function horseText(row) {
   const total = row.montant_total != null && row.montant_total !== ''
     ? money(row.montant_total)
     : 25 * count;
-  return [
+  return leadWithAuthor(row, [
     `## DOSSIER DE CRÉDIT DE MISE HIPPIQUE — ${who.toUpperCase()} ##`,
     '',
     '**INFORMATIONS PERSONNELLES**',
@@ -354,7 +371,7 @@ function horseText(row) {
     line('Autres recommandations', row.recommandations),
     '',
     'Remboursement immédiat après la course. Les coupons restent propriété de la banque jusqu’à leur utilisation.'
-  ].join('\n');
+  ]).join('\n');
 }
 
 function horseEmbed(row, stamp) {
@@ -377,7 +394,7 @@ function missionEmbed(row, echeance) {
 }
 
 function pawnText(row) {
-  return [
+  return leadWithAuthor(row, [
     `## DÉTAILS PERSONNELS - ${row.prenom || ''} ${(row.nom || '').toUpperCase()} ##`,
     '',
     '**INFORMATIONS PERSONNELS**',
@@ -398,12 +415,12 @@ function pawnText(row) {
     line('Date limite avant saisie du bien', dateFr(row.echeance_date)),
     '',
     'Le demandeur accepte la perte totale de propriété des biens mentionnés ci-dessus au profit de la banque, en cas de non remboursement du prêt sous 7 jours à partir de la date de création du contrat ci-présent.'
-  ].join('\n');
+  ]).join('\n');
 }
 
 function consigneText(row) {
   const shared = row.access === 'partagé';
-  return [
+  return leadWithAuthor(row, [
     `## DÉTAILS PERSONNELS - ${row.prenom || ''} ${(row.nom || '').toUpperCase()} ##`,
     '',
     '**INFORMATIONS PERSONNELS**',
@@ -439,12 +456,12 @@ function consigneText(row) {
     line("Frais d'assurance supplémentaires", moneyFr(0)),
     '',
     'La banque se réserve le droit de suspendre l’accès aux coffres, et consignes en cas de non-paiement, fraude, activité illégale ou sur demande de la justice (mandat).'
-  ].join('\n');
+  ]).join('\n');
 }
 
 function termText(row) {
   const weeks = Number(row.weeks);
-  return [
+  return leadWithAuthor(row, [
     "#Épargne à Terme — SOUSCRIPTION",
     '',
     '**INFORMATIONS PERSONNELLES**',
@@ -484,12 +501,12 @@ function termText(row) {
     'En cas de rupture du contrat, les fonds versés lors de la souscription à ce service restent la propriété des banques.',
     '',
     `Signature : ${row.prenom || ''}.${row.nom || ''}`
-  ].join('\n');
+  ]).join('\n');
 }
 
 function payrollText(row) {
   const agencies = (row.agencies || []).map((agency) => AGENCY_LABELS[agency] || agency).join(', ');
-  return [
+  return leadWithAuthor(row, [
     `## DÉTAILS PERSONNELS - ${row.company_name || ''} ##`,
     '',
     '**INFORMATIONS PERSONNELS**',
@@ -547,11 +564,11 @@ function payrollText(row) {
     ]),
     '',
     "L'entreprise reconnaît que la Interstate Banking & Trust Company agit uniquement en qualité de mandataire chargé du traitement et du versement des salaires conformément aux informations fournies par l'employeur. Toute erreur, omission ou déclaration frauduleuse demeure sous la responsabilité exclusive de l'entreprise cliente."
-  ].join('\n');
+  ]).join('\n');
 }
 
 function goldsteinText(row) {
-  return [
+  return leadWithAuthor(row, [
     "#Livret d'épargne Goldstein — SOUSCRIPTION",
     '',
     '**INFORMATIONS PERSONNELLES**',
@@ -584,7 +601,7 @@ function goldsteinText(row) {
     ]),
     '',
     "Les sommes inscrites au livret demeurent la propriété du titulaire. Toutes les deux semaines, la Interstate Banking & Trust Company porte au crédit du livret un intérêt de 3 % calculé sur le seul solde."
-  ].join('\n');
+  ]).join('\n');
 }
 
 const MISSION_KINDS = {
@@ -619,10 +636,9 @@ function missionText(row, echeance) {
     );
   }
   missions.push(`- Inscrire au dossier ${number} la réponse obtenue.`);
-  const author = text(row.created_by_username || row.banquier_username, 80) || '—';
   return [
     line('Type de dossier', kind),
-    line('Contrat établi par', author),
+    line('Contrat établi par', contractAuthor(row)),
     line('Référence', number),
     '',
     `Objectif : Faire parvenir, avant l'échéance de demain, un télégramme de rappel à ${who} concernant son dossier de ${kindLower} (${number}).`,
