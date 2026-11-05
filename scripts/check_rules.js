@@ -377,6 +377,20 @@ const fundClosed = actions.serviceNotice('speculative_funds', 'withdraw', {
 assert.ok(fundClosed.title.includes('Clôture — fonds'));
 assert.strictEqual(fundClosed.color, 0xff0000);
 assert.strictEqual(fundClosed.mention, '@Réserve fédérale');
+const fundTransfer = actions.serviceNotice('speculative_funds', 'withdraw', {
+  full_name: 'Ada Lovelace', dossier_number: 'FS-000001', status: 'ouvert', cost_basis: 500, withdrawn_total: 500,
+  withdrawal: {
+    on: '1904-11-03', amount: 500, basis_out: 500, profit: 0, tax: 0, net: 500,
+    capital_after: 500, withdrawn_total: 500, transfer_to_offer: true
+  }
+});
+assert.ok(fundTransfer.title.includes('Transfert vers une autre offre'));
+assert.ok(fundTransfer.description.includes('pas de demande de remboursement'));
+const fundTransferMove = require('../server_api/products').PRODUCTS.speculative_funds.move(
+  { status: 'ouvert', capital_balance: 1000, cost_basis: 1000, withdrawn_total: 0, deposits: [], withdrawals: [] },
+  { action: 'withdraw', amount: 400, transfer_to_offer: true }
+);
+assert.strictEqual(fundTransferMove.row.withdrawal.transfer_to_offer, true);
 const fundCloseAction = actions.serviceNotice('speculative_funds', 'close', {
   full_name: 'Ada Lovelace', dossier_number: 'FS-000001', status: 'clos', capital_balance: 0
 });

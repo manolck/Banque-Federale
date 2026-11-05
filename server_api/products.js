@@ -273,6 +273,7 @@ function moveFund(row, body) {
   if (body.action === 'withdraw') {
     const quoted = fundWithdrawalQuote(row, body.amount);
     if (quoted.error) return fail(quoted.error);
+    const transferToOffer = !!(body.transfer_to_offer || body.transferToOffer);
     const entry = {
       on,
       amount: quoted.amount,
@@ -284,7 +285,8 @@ function moveFund(row, body) {
       capital_after: quoted.capital_after,
       contributed: quoted.contributed,
       withdrawn_before: quoted.withdrawn_before,
-      withdrawn_total: quoted.withdrawn_total
+      withdrawn_total: quoted.withdrawn_total,
+      transfer_to_offer: transferToOffer
     };
     const withdrawals = fundHistory(row).concat(entry);
     const patch = {

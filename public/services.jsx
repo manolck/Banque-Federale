@@ -749,6 +749,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const [movement, setMovement] = useState('');
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawTransfer, setWithdrawTransfer] = useState(false);
   const [tierDraft, setTierDraft] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
@@ -858,6 +859,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   function openFundWithdraw() {
     if (!selected) return;
     setWithdrawAmount('');
+    setWithdrawTransfer(false);
     setWithdrawOpen(true);
   }
   async function confirmFundWithdraw() {
@@ -865,9 +867,10 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     const amount = bfMoney(withdrawAmount);
     if (!(amount > 0)) return notify('⚠ Indique un montant à retirer.');
     if (amount > max) return notify(`⚠ Le retrait maximum est ${bfFr(max)}.`);
-    if (await act('withdraw', { amount })) {
+    if (await act('withdraw', { amount, transfer_to_offer: !!withdrawTransfer })) {
       setWithdrawOpen(false);
       setWithdrawAmount('');
+      setWithdrawTransfer(false);
       setMovement('');
     }
   }
@@ -990,6 +993,11 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
                 }}
               />
               <Span><Btn color="#555" disabled={busy || !(max > 0)} onClick={() => setWithdrawAmount(String(max))}>Tout retirer ({bfFr(max)})</Btn></Span>
+              <Flag
+                label="Fonds transférés vers une autre offre (pas de demande de remboursement)"
+                checked={withdrawTransfer}
+                onChange={setWithdrawTransfer}
+              />
             </Part>
             <Part title="Calcul" plain>
               {quote && quote.error
@@ -999,8 +1007,9 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
                     <div className="bvh-field"><b>Dont capital versé</b><span>{bfFr(quote.basis_out)}</span></div>
                     <div className="bvh-field"><b>Dont bénéfice</b><span>{bfFr(quote.profit)}</span></div>
                     <div className="bvh-field"><b>Taxe 15 %</b><span>{quote.tax ? bfFr(quote.tax) : 'Aucune'}</span></div>
-                    <div className="bvh-field"><b>Net à verser</b><span>{bfFr(quote.net)}</span></div>
+                    <div className="bvh-field"><b>{withdrawTransfer ? 'Net transféré' : 'Net à verser'}</b><span>{bfFr(quote.net)}</span></div>
                     <div className="bvh-field"><b>Capital restant</b><span>{bfFr(quote.capital_after)}</span></div>
+                    {withdrawTransfer && <div className="bvh-field"><b>Remboursement</b><span>Non créé — transfert d’offre</span></div>}
                   </>
                   : <p style={{ color: '#c9a567', margin: 0 }}>Indique un montant pour voir la taxe.</p>}
             </Part>

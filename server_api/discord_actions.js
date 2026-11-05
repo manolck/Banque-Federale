@@ -74,6 +74,7 @@ function serviceNotice(service, action, row) {
   }
   if (service === 'speculative_funds' && action === 'withdraw') {
     const movement = row.withdrawal || {};
+    const transfer = !!movement.transfer_to_offer;
     const closed = row.status === 'clos' || row.status === 'paye'
       || (movement.capital_after != null && movement.capital_after !== '' && !(money(movement.capital_after) > 0));
     const lines = [
@@ -82,14 +83,15 @@ function serviceNotice(service, action, row) {
       line('Dont capital versé', moneyFr(movement.basis_out)),
       line('Dont bénéfice', moneyFr(movement.profit)),
       line('Taxe 15 % (sur le bénéfice)', movement.tax ? moneyFr(movement.tax) : 'Aucune'),
-      line('Virement net', moneyFr(movement.net)),
+      line(transfer ? 'Net transféré' : 'Virement net', moneyFr(movement.net)),
+      transfer ? 'Transfert vers une autre offre — pas de demande de remboursement.' : '',
       line('Capital versé restant', moneyFr(row.cost_basis)),
       line('Total déjà retiré', moneyFr(movement.withdrawn_total != null ? movement.withdrawn_total : row.withdrawn_total)),
       line('Capital restant', moneyFr(movement.capital_after))
     ];
     return closed
-      ? closureNotice('Clôture — fonds', lines, row)
-      : notice('Retrait', lines, WITHDRAW, row);
+      ? closureNotice(transfer ? 'Clôture — transfert d’offre' : 'Clôture — fonds', lines, row)
+      : notice(transfer ? 'Transfert vers une autre offre' : 'Retrait', lines, WITHDRAW, row);
   }
   if (service === 'speculative_funds' && action === 'close') {
     return closureNotice('Clôture — fonds', [

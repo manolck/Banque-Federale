@@ -130,7 +130,7 @@ function createServiceRoute(name) {
       Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
       if (updated.error) return json(res, 500, { error: updated.error.message });
-      if (name === 'speculative_funds' && body.action === 'withdraw' && patch.withdrawal) {
+      if (name === 'speculative_funds' && body.action === 'withdraw' && patch.withdrawal && !patch.withdrawal.transfer_to_offer && !body.transfer_to_offer) {
         try {
           const { recordWithdrawal } = require('./fund_payouts');
           await recordWithdrawal(updated.data, patch.withdrawal, actor);
