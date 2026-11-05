@@ -60,7 +60,23 @@ async function readSetting(key) {
   return data ? data.setting_value : '';
 }
 
+async function autoApplyMovement(fund, item, threadUrl) {
+  if (!fund || !item || (item.kind !== 'add_deposit' && item.kind !== 'add_withdrawal')) return null;
+  const built = applyProposal(fund, item);
+  if (built.error) return { error: built.error };
+  const patch = { ...built.patch };
+  if (!discordUrlOk(fund.discord_url) && discordUrlOk(threadUrl)) {
+    patch.discord_url = String(threadUrl).trim();
+    patch.discord_posted_at = fund.discord_posted_at || new Date().toISOString();
+  }
+  const updated = await sb.from(FUNDS).update(patch).eq('id', fund.id);
+  if (updated.error) throw new Error(updated.error.message);
+  Object.assign(fund, patch);
+  return patch;
+}
+
 // Réception d'un lot de fils lus par le bot : propositions + liaison discord_url manquante.
+// Les dépôts / retraits Discord sont appliqués tout de suite (capital + cost_basis).
 async function scan(body) {
   const threads = Array.isArray(body.threads) ? body.threads.slice(0, MAX_THREADS) : [];
   const funds = await sb.from(FUNDS).select('*');
@@ -70,7 +86,7 @@ async function scan(body) {
   if (existing.error) throw new Error(existing.error.message);
   const rows = existing.data || [];
   const known = new Map(rows.map((row) => [row.sig, row]));
-  const stats = { threads: threads.length, ignored: 0, created: 0, resolved: 0, pending: 0, linked: 0 };
+  const stats = { threads: threads.length, ignored: 0, created: 0, resolved: 0, pending: 0, linked: 0, applied: 0 };
 
   for (const thread of threads) {
     const parsed = parseThread(thread);
@@ -81,7 +97,26 @@ async function scan(body) {
       wanted.push({ sig: `unknown|${parsed.dossier_number}|${parsed.thread_id}`, fund_id: '', kind: 'unknown_dossier', payload: { name: parsed.name } });
     } else {
       if (await linkFundThread(fund, parsed.thread_url)) stats.linked += 1;
-      for (const item of diffFund(fund, parsed).proposals) {
+      let proposals = diffFund(fund, parsed).proposals;
+      const movements = proposals.filter((item) => item.kind === 'add_deposit' || item.kind === 'add_withdrawal');
+      let moved = false;
+      for (const item of movements) {
+        const applied = await autoApplyMovement(fund, item, parsed.thread_url);
+        if (applied && !applied.error) {
+          moved = true;
+          stats.applied += 1;
+          await logAction(
+            { id: 'bot', username: 'discord-sync', role: 'bot' },
+            'synchro_forum_fonds_auto',
+            { dossier: parsed.dossier_number, kind: item.kind, amount: item.movement && item.movement.amount }
+          );
+        } else {
+          wanted.push({ sig: proposalSignature(fund, item), fund_id: String(fund.id), kind: item.kind, payload: item });
+        }
+      }
+      if (moved) proposals = diffFund(fund, parsed).proposals;
+      for (const item of proposals) {
+        if (item.kind === 'add_deposit' || item.kind === 'add_withdrawal') continue;
         wanted.push({ sig: proposalSignature(fund, item), fund_id: String(fund.id), kind: item.kind, payload: item });
       }
     }

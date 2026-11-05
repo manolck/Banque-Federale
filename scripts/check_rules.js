@@ -514,6 +514,65 @@ const forumPaused = require('../server_api/fonds_forum').applyProposal(
   { kind: 'add_statement', statement: { date: '2026-11-01', result_percent: 2, capital_before: 1000, capital_after: 1020 } }
 );
 assert.ok(forumPaused.error);
+const forum = require('../server_api/fonds_forum');
+const depositEmbed = forum.parseMovementEmbed({
+  title: 'Dépôt complémentaire — Tommy Wayne (Dossier HCP-000003)',
+  description: '',
+  author: { name: 'Haussmann Capital Partners' },
+  fields: [
+    { name: 'Montant déposé', value: '**8 000,00 $**', inline: true },
+    { name: 'Capital', value: 'Avant : **2 990,26 $**\nAprès : **10 990,26 $**', inline: true }
+  ],
+  footer: { text: 'Le capital investi demeure exposé à un risque de perte partielle ou totale selon les conditions du marché. • 13/10/1904 19:42' }
+});
+assert.strictEqual(depositEmbed.dossier_number, 'HCP-000003');
+assert.strictEqual(depositEmbed.movement.kind, 'deposit');
+assert.strictEqual(depositEmbed.movement.amount, 8000);
+assert.strictEqual(depositEmbed.movement.capital_before, 2990.26);
+assert.strictEqual(depositEmbed.movement.capital_after, 10990.26);
+assert.strictEqual(depositEmbed.movement.on, '2026-10-13');
+const depositAlt = forum.parseMovementEmbed({
+  title: 'Haussmann Capital Partners',
+  description: 'Dépôt complémentaire — Tommy Wayne (Dossier HCP-000003)\n\n**Montant déposé :** 8 000,00 $\n**Capital :**\nAvant : 2 990,26 $\nAprès : 10 990,26 $',
+  fields: [],
+  footer: { text: '13/10/1904 19:42' }
+});
+assert.ok(depositAlt);
+assert.strictEqual(depositAlt.movement.amount, 8000);
+assert.strictEqual(depositAlt.movement.capital_after, 10990.26);
+const fundBeforeDeposit = {
+  status: 'ouvert', amount: 2000, capital_balance: 2990.26, cost_basis: 2000, deposits: [], statements: []
+};
+const depositApplied = forum.applyProposal(fundBeforeDeposit, {
+  kind: 'add_deposit',
+  movement: depositEmbed.movement
+});
+assert.ok(!depositApplied.error);
+assert.strictEqual(depositApplied.patch.capital_balance, 10990.26);
+assert.strictEqual(depositApplied.patch.cost_basis, 10000);
+assert.strictEqual(depositApplied.patch.deposits.length, 1);
+assert.strictEqual(depositApplied.patch.deposits[0].amount, 8000);
+// Capital déjà à jour via un relevé : on enregistre le dépôt pour le cost_basis sans double compter.
+const alreadyCounted = forum.applyProposal(
+  { status: 'ouvert', amount: 2000, capital_balance: 10990.26, cost_basis: 2000, deposits: [], statements: [{ on: '2026-10-20', capital_after: 10990.26 }] },
+  { kind: 'add_deposit', movement: depositEmbed.movement }
+);
+assert.strictEqual(alreadyCounted.patch.capital_balance, 10990.26);
+assert.strictEqual(alreadyCounted.patch.cost_basis, 10000);
+const withLaterDeposit = forum.applyProposal(
+  {
+    status: 'ouvert', amount: 2000, capital_balance: 10990.26, cost_basis: 10000,
+    deposits: [{ on: '2026-10-13', amount: 8000 }],
+    statements: []
+  },
+  { kind: 'add_statement', statement: { date: '2026-10-06', result_percent: 2, capital_before: 2000, capital_after: 2040 } }
+);
+assert.strictEqual(withLaterDeposit.patch.capital_balance, 10040);
+const withdrawTax = money.fundWithdrawalQuote({
+  amount: 2000, capital_balance: 10990.26, cost_basis: 10000, deposits: [{ amount: 8000 }], withdrawals: []
+}, 10990.26);
+assert.ok(withdrawTax.basis_out > 9000);
+assert.ok(withdrawTax.tax < 200);
 const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_balance: 1000, statements: [] }, '2026-11-01', { III: { final: -3, regime: 'krach', label: 'Panique sur les marchés' } });
 assert.strictEqual(lost.capital_balance, 970);
 const tuesday = new Date('2026-10-27T19:00:00Z');

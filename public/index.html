@@ -3104,6 +3104,14 @@ function FundSyncPage({notify,canWrite,onRefresh}){
     const p=r.payload||{};
     if(r.kind==='status')return {label:'Statut',lines:['Registre : '+(p.current_status||'ouvert')+' → forum : '+p.status]};
     if(r.kind==='unknown_dossier')return {label:'Dossier inconnu',lines:['Le fil « '+(p.name||r.thread_name)+' » ne correspond à aucun dossier du registre.']};
+    if(r.kind==='add_deposit'||r.kind==='add_withdrawal'){
+      const m=p.movement||{};
+      const kind=r.kind==='add_deposit'?'Dépôt manquant':'Retrait manquant';
+      const lines=[
+        (m.on?rpDay(m.on)+' · ':'')+fCur(m.amount)+(m.capital_before!=null?' · '+fCur(m.capital_before)+' → '+fCur(m.capital_after):'')
+      ];
+      return {label:kind,lines};
+    }
     const s=p.statement||{},c=p.current;
     const forum=marketRpDay(s.date)+' · '+pctTxt(s.result_percent)+' · '+fCur(s.capital_before)+' → '+fCur(s.capital_after);
     return r.kind==='add_statement'
@@ -3114,7 +3122,7 @@ function FundSyncPage({notify,canWrite,onRefresh}){
   const last=data?.last_scan?new Date(data.last_scan).toLocaleString('fr-FR'):'jamais';
   return <div className="vx-home">
     <div className="bvh-topbar">
-      <div><small>Forum Discord · fonds-spéculatifs</small><h1>Synchro forum</h1><p style={{color:'#d8bc78',marginTop:4}}>Écarts entre les relevés du forum et le registre. Rien n’est modifié avant ta validation. Dernière lecture : {last}{data?.requested?' · relecture demandée…':''}</p></div>
+      <div><small>Forum Discord · fonds-spéculatifs</small><h1>Synchro forum</h1><p style={{color:'#d8bc78',marginTop:4}}>Les dépôts et retraits Discord sont repris automatiquement. Les relevés de marché restent à valider. Dernière lecture : {last}{data?.requested?' · relecture demandée…':''}</p></div>
       {canWrite&&<div className="vx-hero-actions">
         <button type="button" className="vx-btn quiet" onClick={requestScan}>Relire le forum</button>
         <button type="button" className="vx-btn primary" onClick={applyAll}>Tout appliquer</button>

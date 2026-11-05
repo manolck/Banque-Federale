@@ -301,7 +301,8 @@ async function readThread(forum, thread) {
           description: raw.description || '',
           fields: raw.fields || [],
           footer: raw.footer || null,
-          timestamp: raw.timestamp || null
+          timestamp: raw.timestamp || null,
+          author: raw.author ? { name: raw.author.name || '' } : null
         };
       });
       if (embeds.length) messages.push({ id: message.id, embeds });

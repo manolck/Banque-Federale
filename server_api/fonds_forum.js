@@ -2,7 +2,7 @@
 // Fonctions pures : le bot envoie les embeds bruts, tout le décodage se fait ici.
 // Gère les relevés de marché, les dépôts complémentaires et les demandes de retrait.
 
-const { fundDepositQuote, fundWithdrawalQuote } = require('./money');
+const { fundWithdrawalQuote, fundCapital, fundCostBasis, money } = require('./money');
 
 const SPACES = /[\s  ]/g;
 
@@ -89,20 +89,32 @@ function parseEmbed(embed) {
   };
 }
 
+function readCapitalPair(text) {
+  const raw = String(text == null ? '' : text);
+  const before = raw.match(/Avant\s*:\s*([^\n\r]+)/i);
+  const after = raw.match(/Apr[eè]s\s*:\s*([^\n\r]+)/i);
+  return {
+    before: before ? parseNumber(before[1]) : NaN,
+    after: after ? parseNumber(after[1]) : NaN
+  };
+}
+
 // Embeds « Dépôt complémentaire » / « Demande de retrait » (format forum Haussmann).
-// Attend title, fields, footer (texte) et éventuellement timestamp.
+// Title, description, fields, footer et éventuellement timestamp / author.
 function parseMovementEmbed(embed) {
   if (!embed || typeof embed !== 'object') return null;
 
   const title = plain(embed.title || '');
-  const description = plain(embed.description || '');
+  const descriptionRaw = String(embed.description || '');
+  const description = plain(descriptionRaw);
+  const author = plain((embed.author && embed.author.name) || '');
   const footer = plain((embed.footer && embed.footer.text) || embed.footer_text || '');
-  const full = `${title}\n${description}\n${footer}`;
+  const full = `${title}\n${description}\n${author}\n${footer}`;
 
-  const isDeposit = /d[eé]p[oô]t\s+compl[eé]mentaire/i.test(title)
-    || /\bversement\b/i.test(title);
-  const isWithdraw = /demande\s+de\s+retrait/i.test(title)
-    || (/\bretrait\b/i.test(title) && !/anticip/i.test(title));
+  const isDeposit = /d[eé]p[oô]t\s+compl[eé]mentaire/i.test(full)
+    || (/\bversement\b/i.test(title) && !/retrait/i.test(full));
+  const isWithdraw = /demande\s+de\s+retrait/i.test(full)
+    || (/^\s*retrait\b/i.test(title) && !/anticip/i.test(title));
   if (!isDeposit && !isWithdraw) return null;
 
   const dossier_number = extractDossier(full);
@@ -121,11 +133,11 @@ function parseMovementEmbed(embed) {
     if (/montant\s+(d[eé]pos[eé]|demand[eé]|retir[eé])/i.test(name) || nName === 'montant') {
       amount = parseNumber(value);
     }
-    if (/^capital$/i.test(name)) {
-      const b = value.match(/Avant\s*:\s*([^\n\r]+)/i);
-      const a = value.match(/Apr[eè]s\s*:\s*([^\n\r]+)/i);
-      if (b) before = parseNumber(b[1]);
-      if (a) after = parseNumber(a[1]);
+    if (/^capital$/i.test(name) || /capital\s+(avant|apres|restant)/i.test(nName)) {
+      const pair = readCapitalPair(value);
+      if (Number.isFinite(pair.before)) before = pair.before;
+      if (Number.isFinite(pair.after)) after = pair.after;
+      if (!Number.isFinite(after) && /restant/i.test(nName)) after = parseNumber(value);
     }
     if (/taxe/i.test(name)) {
       const t = parseNumber(value);
@@ -137,21 +149,29 @@ function parseMovementEmbed(embed) {
     }
   }
 
-  // Fallback : anciens avis texte (Date / Montant / Capital restant)
-  if (!Number.isFinite(amount) || amount <= 0) {
+  // Fallback : avis texte (lignes brutes, avant aplatissement des espaces)
+  if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(before) || !Number.isFinite(after)) {
     const lines = {};
-    for (const line of description.split(/\n+/)) {
-      const m = line.match(/^([^:]+):\s*(.+)$/);
+    for (const line of descriptionRaw.split(/\r?\n+/)) {
+      const m = String(line || '').match(/^[*_\s]*([^:*_]+?)[*_\s]*:\s*(.+)$/);
       if (m) lines[normal(m[1])] = plain(m[2]);
     }
-    amount = parseNumber(lines['montant depose'] || lines['montant demande'] || lines['montant retire'] || lines.montant || '');
-    if (!Number.isFinite(after)) after = parseNumber(lines.capital || lines['capital restant'] || '');
+    if (!Number.isFinite(amount) || amount <= 0) {
+      amount = parseNumber(lines['montant depose'] || lines['montant demande'] || lines['montant retire'] || lines.montant || '');
+    }
+    if (!Number.isFinite(before)) before = parseNumber(lines['capital avant'] || lines.avant || '');
+    if (!Number.isFinite(after)) {
+      after = parseNumber(lines['capital apres'] || lines.apres || lines.capital || lines['capital restant'] || '');
+    }
+    const pair = readCapitalPair(descriptionRaw);
+    if (!Number.isFinite(before) && Number.isFinite(pair.before)) before = pair.before;
+    if (!Number.isFinite(after) && Number.isFinite(pair.after)) after = pair.after;
   }
 
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
   // Date : footer « … • 11/09/1904 23:16 » ou timestamp Discord
-  let on = noticeDateToIso(footer);
+  let on = noticeDateToIso(footer) || noticeDateToIso(descriptionRaw) || noticeDateToIso(title);
   if (!on && embed.timestamp) {
     const d = new Date(embed.timestamp);
     if (!Number.isNaN(d.getTime())) {
@@ -327,20 +347,35 @@ function applyProposal(fund, proposal) {
   if (proposal.kind === 'add_deposit') {
     const mov = proposal.movement || {};
     if (!(Number(mov.amount) > 0)) return { error: 'Versement incomplet.' };
-    const quoted = fundDepositQuote(fund, mov.amount);
-    if (quoted.error) return { error: quoted.error };
+    const amount = money(mov.amount);
+    const current = fundCapital(fund);
+    const discordBefore = mov.capital_before == null ? null : money(mov.capital_before);
+    const discordAfter = mov.capital_after == null ? null : money(mov.capital_after);
+    let capital_before = current;
+    let capital_after = money(current + amount);
+    // Ne pas double-compter si un relevé a déjà porté le capital au niveau « après dépôt ».
+    if (discordAfter != null && same(current, discordAfter)) {
+      capital_before = discordBefore != null ? discordBefore : money(Math.max(0, current - amount));
+      capital_after = current;
+    } else if (discordBefore != null && same(current, discordBefore) && discordAfter != null) {
+      capital_before = discordBefore;
+      capital_after = discordAfter;
+    } else if (discordAfter != null && current + CENTS < discordAfter) {
+      capital_after = discordAfter;
+      capital_before = discordBefore != null ? discordBefore : money(Math.max(0, discordAfter - amount));
+    }
     const deposits = (Array.isArray(fund.deposits) ? fund.deposits : []).concat({
       on: mov.on || '',
-      amount: quoted.amount,
-      capital_before: quoted.capital_before,
-      capital_after: quoted.capital_after,
+      amount,
+      capital_before,
+      capital_after,
       source: 'discord'
     });
     return {
       patch: {
         deposits,
-        capital_balance: quoted.capital_after,
-        cost_basis: quoted.cost_basis
+        capital_balance: capital_after,
+        cost_basis: money(fundCostBasis(fund) + amount)
       }
     };
   }
@@ -356,18 +391,25 @@ function applyProposal(fund, proposal) {
       tax: quoted.tax,
       net: quoted.net,
       profit: quoted.profit,
+      basis_out: quoted.basis_out,
       capital_before: quoted.capital_before,
       capital_after: quoted.capital_after,
+      withdrawn_total: quoted.withdrawn_total,
       source: 'discord'
     };
+    if (mov.capital_after != null && same(fundCapital(fund), money(mov.capital_before)) && Number(mov.capital_after) >= 0) {
+      entry.capital_before = money(mov.capital_before);
+      entry.capital_after = money(mov.capital_after);
+    }
     const withdrawals = fundWithdrawals(fund).concat(entry);
     const patch = {
       withdrawals,
       withdrawal: entry,
-      capital_balance: quoted.capital_after,
-      cost_basis: quoted.cost_basis
+      capital_balance: entry.capital_after,
+      cost_basis: quoted.cost_basis,
+      withdrawn_total: quoted.withdrawn_total
     };
-    if (quoted.capital_after === 0) {
+    if (!(entry.capital_after > 0)) {
       patch.status = 'clos';
       patch.closed_at = new Date().toISOString();
     }
@@ -406,8 +448,19 @@ function applyProposal(fund, proposal) {
   }
   list.sort((a, b) => String((a && a.on) || '').localeCompare(String((b && b.on) || '')));
   const patch = { statements: list };
-  const last = latestAfter(list);
-  if (last != null) patch.capital_balance = last;
+  const lastOn = list.filter((row) => row && row.on && row.capital_after != null)
+    .sort((a, b) => String(a.on).localeCompare(String(b.on)))
+    .slice(-1)[0];
+  if (lastOn) {
+    let capital = money(lastOn.capital_after);
+    for (const dep of Array.isArray(fund.deposits) ? fund.deposits : []) {
+      if (dep && dep.on && String(dep.on) > String(lastOn.on)) capital = money(capital + money(dep.amount));
+    }
+    for (const wdr of fundWithdrawals(fund)) {
+      if (wdr && wdr.on && String(wdr.on) > String(lastOn.on)) capital = money(capital - money(wdr.amount));
+    }
+    patch.capital_balance = capital;
+  }
   return { patch };
 }
 
