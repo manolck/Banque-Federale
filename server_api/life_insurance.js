@@ -47,6 +47,18 @@ function normalize(row){
 function canActOnLife(status){
   return ACTIVE.has(String(status || '').trim() || 'active');
 }
+function healLifePatch(row){
+  const payments = Array.isArray(row && row.payments) ? row.payments : [];
+  const raw = String(row && row.status || '').trim();
+  if (['closed', 'paid_to_beneficiary', 'cancelled', 'death_reported', 'under_review', 'closure_requested'].includes(raw)) {
+    return null;
+  }
+  const complete = payments.length > 0 && payments.every((payment) => payment && payment.status === 'paid');
+  const keys = row && row.interest_keys && typeof row.interest_keys === 'object' ? Object.keys(row.interest_keys) : [];
+  const next = complete ? (keys.length ? 'placed' : 'payments_complete') : 'active';
+  if (next === raw) return null;
+  return { status: next };
+}
 async function event(contractId,type,actor,details={}){
   await sb.from('pret_life_insurance_events').insert({contract_id:contractId,event_type:type,actor_username:actor,details});
 }
@@ -54,7 +66,7 @@ async function nextNumber(){
   return nextSerial('pret_life_insurance_contracts','contract_number','AV-');
 }
 
-module.exports=(req,res)=>handler(req,res,async()=>{
+module.exports=Object.assign((req,res)=>handler(req,res,async()=>{
   const actor=await currentUser(req);
   if(!actor)return json(res,401,{error:'Non connecté'});
   if(req.method==='GET'&&!hasPermission(actor,'bank.read'))return json(res,403,{error:'Accès refusé'});
@@ -101,6 +113,24 @@ module.exports=(req,res)=>handler(req,res,async()=>{
 
   if(req.method==='PUT'){
     const b=await readBody(req),id=safeId(b.id),action=clean(b.action,40);
+    if(action==='heal_all'){
+      const {data,error}=await sb.from('pret_life_insurance_contracts').select('*').order('created_at',{ascending:false});
+      if(error)return json(res,500,{error:error.message});
+      const rows=data||[];
+      let updated=0;
+      const healed=[];
+      for(const row of rows){
+        const fix=healLifePatch(row);
+        if(!fix){healed.push(normalize(row));continue;}
+        const patch={...fix,updated_at:new Date().toISOString(),updated_by_username:actor.username};
+        const saved=await sb.from('pret_life_insurance_contracts').update(patch).eq('id',row.id).select().single();
+        if(saved.error)return json(res,500,{error:saved.error.message});
+        updated+=1;
+        healed.push(normalize(saved.data));
+      }
+      await logAction(actor,'assurance_vie_heal_all',{updated,total:rows.length});
+      return json(res,200,{updated,total:rows.length,contracts:healed});
+    }
     if(!id)return json(res,400,{error:'Contrat manquant.'});
     if(['confirm_closure','start_review','pay_beneficiary'].includes(action) && roleRank(actor)<roleRank('DEPUTY_DIRECTOR'))
       return json(res,403,{error:'Cette validation est réservée à la direction.'});
@@ -167,4 +197,4 @@ module.exports=(req,res)=>handler(req,res,async()=>{
     return json(res,200,{ok:true});
   }
   return json(res,405,{error:'Méthode non autorisée'});
-});
+}), { healLifePatch });
