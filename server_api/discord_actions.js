@@ -8,6 +8,7 @@ const GOLD = 0xd7a64d;
 const RED = 0xff0000;
 const WITHDRAW = 0xf0c300;
 const RESERVE_MENTION = '@Réserve fédérale';
+const DIRECTOR_MENTION = '@Directeur';
 
 function who(row) {
   return row.full_name || row.company_name || row.patron
@@ -198,11 +199,14 @@ function lifeNotice(action, row, details) {
     });
   }
   if (action === 'request_closure') {
-    return closureNotice('Demande de clôture', [
+    const embed = notice('Demande de clôture', [
       line('Solde', moneyFr(extra.balance)),
       line('Frais 15 %', moneyFr(extra.fee)),
-      line('Net', moneyFr(extra.net))
-    ], row);
+      line('Net', moneyFr(extra.net)),
+      'Validation du directeur requise pour confirmer la clôture.'
+    ], GOLD, row);
+    embed.mention = DIRECTOR_MENTION;
+    return embed;
   }
   if (action === 'confirm_closure') {
     return closureNotice('Clôture confirmée', [

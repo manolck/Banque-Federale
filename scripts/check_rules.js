@@ -391,6 +391,19 @@ assert.ok(fundTierChange.title.includes('Changement de palier'));
 assert.ok(fundTierChange.description.includes('Palier I'));
 assert.ok(fundTierChange.description.includes('Palier II'));
 assert.strictEqual(fundTierChange.color, 0xd7a64d);
+const lifeClosureAsk = actions.lifeNotice('request_closure', {
+  subscriber_first_name: 'Ada', subscriber_last_name: 'Lovelace', contract_number: 'AV-000001'
+}, { balance: 1000, fee: 150, net: 850 });
+assert.ok(lifeClosureAsk.title.includes('Demande de clôture'));
+assert.ok(lifeClosureAsk.description.includes('850'));
+assert.strictEqual(lifeClosureAsk.mention, '@Directeur');
+assert.strictEqual(lifeClosureAsk.color, 0xd7a64d);
+const lifeClosureQueued = actions.enqueueNotice(
+  { discord_notices: [] },
+  lifeClosureAsk
+);
+assert.strictEqual(lifeClosureQueued.discord_notices[0].content, '@Directeur');
+assert.strictEqual(lifeClosureQueued.discord_notices[0].embed.mention, undefined);
 const loanBase = {
   prenom: 'Kane',
   nom: 'Santana',
