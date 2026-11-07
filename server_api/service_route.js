@@ -122,12 +122,22 @@ function createServiceRoute(name) {
         const caught = product.catchUp(current.data, body);
         if (caught.error) return json(res, 400, { error: caught.error });
         patch = caught.row;
-        patch.catch_up = {
-          kind: String(body.kind || body.entry_kind || '').trim().toLowerCase(),
-          on: String(body.on || '').trim().slice(0, 10),
-          amount: body.amount,
-          result_percent: body.result_percent != null ? body.result_percent : body.result
-        };
+        const removing = body.remove === true || body.remove === 'true' || body.mode === 'remove'
+          || ['remove', 'delete'].includes(String(body.kind || '').trim().toLowerCase());
+        patch.catch_up = removing
+          ? {
+              remove: true,
+              kind: String(body.entry_kind || body.target_kind || body.remove_kind || '').trim().toLowerCase(),
+              on: String(body.on || '').trim().slice(0, 10),
+              amount: body.amount,
+              result_percent: body.result_percent != null ? body.result_percent : body.result
+            }
+          : {
+              kind: String(body.kind || body.entry_kind || '').trim().toLowerCase(),
+              on: String(body.on || '').trim().slice(0, 10),
+              amount: body.amount,
+              result_percent: body.result_percent != null ? body.result_percent : body.result
+            };
       } else if (body.discord_url) {
         if (!discordUrlOk(body.discord_url)) return json(res, 400, { error: 'Lien Discord invalide.' });
         patch = { discord_url: body.discord_url, discord_posted_at: null };

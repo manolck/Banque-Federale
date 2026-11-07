@@ -441,12 +441,34 @@ function catchUpFund(row, body) {
     // Une correction peut rouvrir le dossier si le capital redevient positif.
   }
   const kind = String(body.kind || body.entry_kind || '').trim().toLowerCase();
-  const on = String(body.on || '').trim().slice(0, 10);
-  if (!validDate(on)) return fail('La date est obligatoire.');
-
   const deposits = (Array.isArray(row.deposits) ? row.deposits : []).map((item) => ({ ...item }));
   const withdrawals = fundHistory(row).map((item) => ({ ...item }));
   const statements = (Array.isArray(row.statements) ? row.statements : []).map((item) => ({ ...item }));
+  const removing = body.remove === true || body.remove === 'true' || body.mode === 'remove' || kind === 'remove' || kind === 'delete';
+
+  if (removing) {
+    const targetKind = String(body.entry_kind || body.target_kind || body.remove_kind || '').trim().toLowerCase();
+    const sourceIndex = Number(body.source_index != null ? body.source_index : body.index);
+    if (!Number.isInteger(sourceIndex) || sourceIndex < 0) {
+      return fail('Sélectionne l’entrée à supprimer.');
+    }
+    if (targetKind === 'deposit' || targetKind === 'ajout') {
+      if (sourceIndex >= deposits.length) return fail('Dépôt introuvable.');
+      deposits.splice(sourceIndex, 1);
+    } else if (targetKind === 'withdraw' || targetKind === 'withdrawal' || targetKind === 'retrait') {
+      if (sourceIndex >= withdrawals.length) return fail('Retrait introuvable.');
+      withdrawals.splice(sourceIndex, 1);
+    } else if (targetKind === 'statement' || targetKind === 'releve' || targetKind === 'market') {
+      if (sourceIndex >= statements.length) return fail('Relevé introuvable.');
+      statements.splice(sourceIndex, 1);
+    } else {
+      return fail('Le type d’entrée à supprimer est dépôt, retrait ou relevé.');
+    }
+    return rebuildFundTimeline(row, deposits, withdrawals, statements);
+  }
+
+  const on = String(body.on || '').trim().slice(0, 10);
+  if (!validDate(on)) return fail('La date est obligatoire.');
 
   if (kind === 'deposit' || kind === 'ajout' || kind === 'add_deposit') {
     const amount = money(body.amount);

@@ -456,6 +456,28 @@ const fundCatchNotice = actions.serviceNotice('speculative_funds', 'catch_up', {
 assert.ok(fundCatchNotice.title.includes('Correction manuelle'));
 assert.ok(fundCatchNotice.description.includes('Dépôt'));
 assert.strictEqual(fundCatchNotice.color, 0xd7a64d);
+const fundCatchRemove = catchUpFund({
+  status: 'ouvert',
+  amount: 1000,
+  capital_balance: 1650,
+  cost_basis: 1500,
+  withdrawn_total: 0,
+  deposits: [{ on: '1904-10-03', amount: 500, capital_before: 1000, capital_after: 1500 }],
+  withdrawals: [],
+  statements: [{ on: '1904-10-05', result_percent: 10, capital_before: 1500, capital_after: 1650, market: true }]
+}, { remove: true, entry_kind: 'deposit', source_index: 0 });
+assert.strictEqual(fundCatchRemove.error, undefined);
+assert.strictEqual(fundCatchRemove.row.deposits.length, 0);
+assert.strictEqual(fundCatchRemove.row.statements[0].capital_before, 1000);
+assert.strictEqual(fundCatchRemove.row.capital_balance, 1100);
+assert.strictEqual(fundCatchRemove.row.cost_basis, 1000);
+const fundCatchRemoveNotice = actions.serviceNotice('speculative_funds', 'catch_up', {
+  full_name: 'Ada Lovelace', dossier_number: 'FS-000001', capital_balance: 1100,
+  catch_up: { remove: true, kind: 'deposit', on: '1904-10-03', amount: 500 }
+});
+assert.ok(fundCatchRemoveNotice.title.includes('suppression'));
+assert.ok(fundCatchRemoveNotice.description.includes('retirée'));
+assert.strictEqual(fundCatchRemoveNotice.color, 0xd7a64d);
 const lifeClosureAsk = actions.lifeNotice('request_closure', {
   subscriber_first_name: 'Ada', subscriber_last_name: 'Lovelace', contract_number: 'AV-000001'
 }, { balance: 1000, fee: 150, net: 850 });

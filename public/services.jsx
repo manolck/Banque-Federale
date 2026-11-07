@@ -95,14 +95,20 @@ function fundLineRank(kind) {
 }
 function fundLines(statements, deposits, withdrawals) {
   const taken = Array.isArray(withdrawals) ? withdrawals : fundWithdrawals(withdrawals);
-  return (Array.isArray(statements) ? statements : []).map((item) => ({ kind: 'statement', ...item }))
-    .concat((Array.isArray(deposits) ? deposits : []).map((item) => ({ kind: 'deposit', ...item })))
-    .concat(taken.map((item) => ({ kind: 'withdrawal', ...item })))
+  return (Array.isArray(statements) ? statements : []).map((item, sourceIndex) => ({ ...item, kind: 'statement', sourceIndex }))
+    .concat((Array.isArray(deposits) ? deposits : []).map((item, sourceIndex) => ({ ...item, kind: 'deposit', sourceIndex })))
+    .concat(taken.map((item, sourceIndex) => ({ ...item, kind: 'withdrawal', sourceIndex })))
     .sort((left, right) => {
       const byDate = bfRpIso(left.on || '').localeCompare(bfRpIso(right.on || ''));
       if (byDate) return byDate;
       return fundLineRank(left.kind) - fundLineRank(right.kind);
     });
+}
+function fundLineLabel(item) {
+  const date = item.kind === 'statement' || item.market ? bfMarketDate(item.on) : bfDate(item.on);
+  if (item.kind === 'deposit') return `${date} · Dépôt ${bfFr(item.amount)}`;
+  if (item.kind === 'withdrawal') return `${date} · Retrait ${bfFr(item.amount)}`;
+  return `${date} · Relevé ${fundResult(item.result_percent)}`;
 }
 function fundTaxText(item) {
   if (item.tax == null || item.tax === '') return '—';
@@ -765,10 +771,12 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawTransfer, setWithdrawTransfer] = useState(false);
   const [catchUpOpen, setCatchUpOpen] = useState(false);
+  const [catchUpMode, setCatchUpMode] = useState('add');
   const [catchUpKind, setCatchUpKind] = useState('statement');
   const [catchUpOn, setCatchUpOn] = useState('');
   const [catchUpAmount, setCatchUpAmount] = useState('');
   const [catchUpResult, setCatchUpResult] = useState('');
+  const [catchUpPick, setCatchUpPick] = useState('');
   const [tierDraft, setTierDraft] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
@@ -894,13 +902,39 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     }
   }
   function openFundCatchUp() {
+    setCatchUpMode('add');
     setCatchUpKind('statement');
     setCatchUpOn(bfRpToday());
     setCatchUpAmount('');
     setCatchUpResult('');
+    setCatchUpPick('');
     setCatchUpOpen(true);
   }
   async function confirmFundCatchUp() {
+    if (catchUpMode === 'remove') {
+      if (!catchUpPick) return notify('⚠ Sélectionne l’entrée à supprimer.');
+      const [kind, indexText] = String(catchUpPick).split(':');
+      const sourceIndex = Number(indexText);
+      if (!kind || !Number.isInteger(sourceIndex) || sourceIndex < 0) {
+        return notify('⚠ Sélection invalide.');
+      }
+      const lines = fundLines(selected.statements, selected.deposits, fundWithdrawals(selected));
+      const picked = lines.find((item) => item.kind === kind && item.sourceIndex === sourceIndex);
+      if (!window.confirm(`Supprimer cette entrée ?\n${picked ? fundLineLabel(picked) : catchUpPick}`)) return;
+      const payload = {
+        remove: true,
+        entry_kind: kind === 'withdrawal' ? 'withdraw' : kind,
+        source_index: sourceIndex,
+        on: picked && picked.on,
+        amount: picked && picked.amount,
+        result_percent: picked && picked.result_percent
+      };
+      if (await act('catch_up', payload)) {
+        setCatchUpOpen(false);
+        setCatchUpPick('');
+      }
+      return;
+    }
     if (!catchUpOn) return notify('⚠ Indique la date de l’entrée manquante.');
     const payload = { kind: catchUpKind, on: catchUpOn };
     if (catchUpKind === 'deposit' || catchUpKind === 'withdraw') {
@@ -1068,26 +1102,53 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
             </div>
           </FormPopup>;
         })()}
-        {service === 'speculative_funds' && catchUpOpen && <FormPopup title="Corriger une entrée manquante" onClose={() => !busy && setCatchUpOpen(false)}>
-          <Part title="Rattrapage" plain>
-            <p style={{ color: '#c9a567', margin: '0 0 12px' }}>Ajoute une ligne oubliée au journal. Les soldes seront recalculés chronologiquement.</p>
-          </Part>
-          <Part title="Entrée">
-            <Select label="Type" value={catchUpKind} onChange={(event) => setCatchUpKind(event.target.value)}>
-              <option value="statement">Entrée de fond spéculatif (relevé de marché)</option>
-              <option value="deposit">Ajout de fonds</option>
-              <option value="withdraw">Retrait</option>
-            </Select>
-            <Inp label="Date" type="date" value={catchUpOn} onChange={(event) => setCatchUpOn(event.target.value)} />
-            {(catchUpKind === 'deposit' || catchUpKind === 'withdraw')
-              ? <Inp label="Montant" type="number" min="0" step="0.01" value={catchUpAmount} onChange={(event) => setCatchUpAmount(event.target.value)} />
-              : <Inp label="Résultat de marché (%)" type="number" step="0.1" value={catchUpResult} onChange={(event) => setCatchUpResult(event.target.value)} />}
-          </Part>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-            <Btn color="#555" disabled={busy} onClick={() => setCatchUpOpen(false)}>Annuler</Btn>
-            <Btn disabled={busy} onClick={confirmFundCatchUp}>{busy ? 'Enregistrement…' : 'Insérer la ligne'}</Btn>
-          </div>
-        </FormPopup>}
+        {service === 'speculative_funds' && catchUpOpen && (() => {
+          const catchLines = fundLines(selected.statements, selected.deposits, fundWithdrawals(selected));
+          return <FormPopup title="Corriger une entrée" onClose={() => !busy && setCatchUpOpen(false)}>
+            <Part title="Action">
+              <Select label="Mode" value={catchUpMode} onChange={(event) => { setCatchUpMode(event.target.value); setCatchUpPick(''); }}>
+                <option value="add">Ajouter une entrée manquante</option>
+                <option value="remove">Supprimer une entrée existante</option>
+              </Select>
+            </Part>
+            {catchUpMode === 'remove' ? <>
+              <Part title="Journal" plain>
+                <p style={{ color: '#c9a567', margin: '0 0 12px' }}>Choisis la ligne erronée. Les soldes seront recalculés après suppression.</p>
+              </Part>
+              <Part title="Entrée à supprimer">
+                <Select label="Ligne" value={catchUpPick} onChange={(event) => setCatchUpPick(event.target.value)}>
+                  <option value="">— Choisir —</option>
+                  {catchLines.map((item) => <option key={`${item.kind}:${item.sourceIndex}`} value={`${item.kind}:${item.sourceIndex}`}>{fundLineLabel(item)}</option>)}
+                </Select>
+              </Part>
+            </> : <>
+              <Part title="Rattrapage" plain>
+                <p style={{ color: '#c9a567', margin: '0 0 12px' }}>Ajoute une ligne oubliée au journal. Les soldes seront recalculés chronologiquement.</p>
+              </Part>
+              <Part title="Entrée">
+                <Select label="Type" value={catchUpKind} onChange={(event) => setCatchUpKind(event.target.value)}>
+                  <option value="statement">Entrée de fond spéculatif (relevé de marché)</option>
+                  <option value="deposit">Ajout de fonds</option>
+                  <option value="withdraw">Retrait</option>
+                </Select>
+                <Inp label="Date" type="date" value={catchUpOn} onChange={(event) => setCatchUpOn(event.target.value)} />
+                {(catchUpKind === 'deposit' || catchUpKind === 'withdraw')
+                  ? <Inp label="Montant" type="number" min="0" step="0.01" value={catchUpAmount} onChange={(event) => setCatchUpAmount(event.target.value)} />
+                  : <Inp label="Résultat de marché (%)" type="number" step="0.1" value={catchUpResult} onChange={(event) => setCatchUpResult(event.target.value)} />}
+              </Part>
+            </>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+              <Btn color="#555" disabled={busy} onClick={() => setCatchUpOpen(false)}>Annuler</Btn>
+              <Btn
+                color={catchUpMode === 'remove' ? '#8b642c' : undefined}
+                disabled={busy || (catchUpMode === 'remove' && !catchUpPick)}
+                onClick={confirmFundCatchUp}
+              >
+                {busy ? 'Enregistrement…' : (catchUpMode === 'remove' ? 'Supprimer la ligne' : 'Insérer la ligne')}
+              </Btn>
+            </div>
+          </FormPopup>;
+        })()}
         {termOpen && <>
           <Btn color="#2ecc71" disabled={busy || selected.validated} onClick={() => act('validate_dossier')}>
             {selected.validated ? 'Paiement validé' : 'Valider le paiement'}
