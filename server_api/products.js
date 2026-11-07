@@ -4,7 +4,7 @@ const {
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
 } = require('./discord_forms');
-const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, termPayout, datedLike, rpToday, addDays, asRpDay } = require('./money');
+const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, fundOpening, fundContributedFields, termPayout, datedLike, rpToday, addDays, asRpDay } = require('./money');
 const { safeId } = require('./ids');
 
 function agencyOf(value) {
@@ -61,6 +61,7 @@ async function speculative(body, actor) {
     for_full_name: ownAccount ? null : forFullName,
     for_telegram: ownAccount ? null : text(body.for_telegram, 80) || null,
     declare_risks: true, declare_past: true, declare_accuracy: true, declare_terms: true,
+    opening_amount: money(body.amount),
     capital_balance: money(body.amount),
     cost_basis: money(body.amount),
     withdrawn_total: 0,
@@ -264,6 +265,7 @@ function moveFund(row, body) {
     return {
       row: {
         deposits,
+        ...fundContributedFields(row, deposits),
         capital_balance: quoted.capital_after,
         cost_basis: quoted.cost_basis,
         withdrawn_total: quoted.withdrawn_total
@@ -344,8 +346,11 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
     return fundEventRank(left.type) - fundEventRank(right.type);
   });
 
-  let capital = money(row.amount);
-  let basis = money(row.amount);
+  // Rejoue le journal depuis le capital de souscription : chaque dépôt s’ajoute au capital
+  // tel qu’il était à cette date (après les événements antérieurs).
+  const opening = fundOpening(row);
+  let capital = opening;
+  let basis = opening;
   let withdrawnTotal = 0;
   const nextDeposits = [];
   const nextWithdrawals = [];
@@ -416,10 +421,13 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
     lastWithdrawal = entry;
   }
 
+  const contributed = fundContributedFields(row, nextDeposits);
   const patch = {
     deposits: nextDeposits,
     withdrawals: nextWithdrawals,
     statements: nextStatements,
+    opening_amount: contributed.opening_amount,
+    amount: contributed.amount,
     capital_balance: capital,
     cost_basis: capital > 0 ? basis : 0,
     withdrawn_total: withdrawnTotal

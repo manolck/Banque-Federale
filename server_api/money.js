@@ -314,10 +314,25 @@ function fundWithdrawals(row) {
   return row && row.withdrawal ? [row.withdrawal] : [];
 }
 
+function fundOpening(row) {
+  if (!row) return 0;
+  // Capital initial de souscription. Une fois synchronisé, opening_amount reste stable
+  // et amount porte le capital versé total (opening + dépôts).
+  if (row.opening_amount != null && row.opening_amount !== '') return money(row.opening_amount);
+  return money(row.amount);
+}
+
 function fundContributed(row) {
   if (!row) return 0;
   const added = (Array.isArray(row.deposits) ? row.deposits : []).reduce((sum, item) => sum + money(item && item.amount), 0);
-  return money(money(row.amount) + added);
+  return money(fundOpening(row) + added);
+}
+
+function fundContributedFields(row, deposits) {
+  const list = Array.isArray(deposits) ? deposits : (Array.isArray(row && row.deposits) ? row.deposits : []);
+  const opening = fundOpening(row);
+  const added = list.reduce((sum, item) => sum + money(item && item.amount), 0);
+  return { opening_amount: opening, amount: money(opening + added) };
 }
 
 function fundWithdrawnTotal(row) {
@@ -388,5 +403,5 @@ module.exports = {
   TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
   lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, civilToday, completedWeeks, growLifeDeposit,
-  fundCapital, fundCostBasis, fundContributed, fundWithdrawnTotal, fundWithdrawals, fundDepositQuote, fundWithdrawalQuote
+  fundCapital, fundCostBasis, fundOpening, fundContributed, fundContributedFields, fundWithdrawnTotal, fundWithdrawals, fundDepositQuote, fundWithdrawalQuote
 };

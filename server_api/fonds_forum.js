@@ -2,7 +2,7 @@
 // Fonctions pures : le bot envoie les embeds bruts, tout le décodage se fait ici.
 // Gère les relevés de marché, les dépôts complémentaires et les demandes de retrait.
 
-const { fundWithdrawalQuote, fundCapital, fundCostBasis, money } = require('./money');
+const { fundWithdrawalQuote, fundCapital, fundCostBasis, fundContributedFields, money } = require('./money');
 
 const SPACES = /[\s  ]/g;
 
@@ -374,6 +374,7 @@ function applyProposal(fund, proposal) {
     return {
       patch: {
         deposits,
+        ...fundContributedFields(fund, deposits),
         capital_balance: capital_after,
         cost_basis: money(fundCostBasis(fund) + amount)
       }

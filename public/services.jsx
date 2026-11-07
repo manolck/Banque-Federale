@@ -183,9 +183,13 @@ function bfFundWithdrawals(row) {
   if (Array.isArray(row && row.withdrawals) && row.withdrawals.length) return row.withdrawals;
   return row && row.withdrawal ? [row.withdrawal] : [];
 }
+function bfFundOpening(row) {
+  if (row && row.opening_amount != null && row.opening_amount !== '') return bfMoney(row.opening_amount);
+  return bfMoney(row && row.amount);
+}
 function bfFundContributed(row) {
   const added = (Array.isArray(row && row.deposits) ? row.deposits : []).reduce((sum, item) => sum + bfMoney(item && item.amount), 0);
-  return bfMoney(bfMoney(row && row.amount) + added);
+  return bfMoney(bfFundOpening(row) + added);
 }
 function bfFundWithdrawnTotal(row) {
   if (row && row.withdrawn_total != null && row.withdrawn_total !== '') return bfMoney(row.withdrawn_total);
@@ -459,7 +463,7 @@ function serviceSnapshot(service, row) {
   let right = bfFr(row.amount_due || 0);
   let rightLabel = 'Dû';
   if (service === 'speculative_funds') {
-    left = bfFr(row.amount); leftLabel = 'Souscrit';
+    left = bfFr(bfFundContributed(row)); leftLabel = 'Souscrit';
     if (row.capital_balance != null) {
       right = bfFr(row.capital_balance); rightLabel = 'Capital';
     } else {
@@ -672,9 +676,8 @@ function dossierSides(service, row) {
         ['Souscription', bfDate(row.signed_on)]
       ],
       right: [
-        ['Souscrit', bfFr(row.amount), '#f3d58a'],
+        ['Souscrit', bfFr(position.contributed), '#f3d58a'],
         ['Capital', row.capital_balance == null ? '—' : bfFr(row.capital_balance), '#f3d58a'],
-        ['Capital versé', bfFr(position.contributed)],
         ['Déjà retiré', bfFr(position.withdrawn)],
         ['Capital versé restant', bfFr(position.basis)],
         ['Bénéfice', bfFr(position.profit), '#74d59d']
