@@ -113,6 +113,18 @@ function serviceNotice(service, action, row) {
       'Le dossier suit désormais les résultats de marché du nouveau palier.'
     ], GOLD, row);
   }
+  if (service === 'speculative_funds' && action === 'catch_up') {
+    const entry = row.catch_up || {};
+    const kindLabel = entry.kind === 'deposit' ? 'Dépôt' : entry.kind === 'withdraw' ? 'Retrait' : entry.kind === 'statement' ? 'Relevé de marché' : 'Correction';
+    return notice('Correction manuelle', [
+      line('Type', kindLabel),
+      line('Date', dateFr(entry.on)),
+      entry.amount != null ? line('Montant', moneyFr(entry.amount)) : '',
+      entry.result_percent != null ? line('Résultat', `${entry.result_percent} %`) : '',
+      line('Capital actualisé', moneyFr(row.capital_balance != null ? row.capital_balance : row.amount)),
+      'Entrée ajoutée pour rattraper une erreur de lecture. Les soldes ont été recalculés.'
+    ], GOLD, row);
+  }
   if (service === 'pawn_loans' && action === 'mark_paid') {
     return notice('Paiement validé', [
       line('Somme', moneyFr(row.amount_due || row.repayment || row.amount))

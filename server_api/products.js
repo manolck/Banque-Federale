@@ -305,6 +305,172 @@ function moveFund(row, body) {
   return fail('Ce dossier ne reçoit pas ce mouvement.');
 }
 
+function fundEventRank(type) {
+  if (type === 'deposit') return 0;
+  if (type === 'statement') return 1;
+  return 2;
+}
+
+function rebuildFundTimeline(row, deposits, withdrawals, statements) {
+  const events = [];
+  for (const item of deposits || []) {
+    if (!item || !item.on) continue;
+    events.push({ type: 'deposit', on: String(item.on).slice(0, 10), amount: money(item.amount), source: item.source || '', raw: item });
+  }
+  for (const item of statements || []) {
+    if (!item || !item.on) continue;
+    events.push({
+      type: 'statement',
+      on: String(item.on).slice(0, 10),
+      result_percent: Number(item.result_percent),
+      source: item.source || '',
+      raw: item
+    });
+  }
+  for (const item of withdrawals || []) {
+    if (!item || !item.on) continue;
+    events.push({
+      type: 'withdraw',
+      on: String(item.on).slice(0, 10),
+      amount: money(item.amount),
+      source: item.source || '',
+      transfer_to_offer: !!item.transfer_to_offer,
+      raw: item
+    });
+  }
+  events.sort((left, right) => {
+    const byDate = left.on.localeCompare(right.on);
+    if (byDate) return byDate;
+    return fundEventRank(left.type) - fundEventRank(right.type);
+  });
+
+  let capital = money(row.amount);
+  let basis = money(row.amount);
+  let withdrawnTotal = 0;
+  const nextDeposits = [];
+  const nextWithdrawals = [];
+  const nextStatements = [];
+  let lastWithdrawal = null;
+
+  for (const event of events) {
+    if (event.type === 'deposit') {
+      if (!(event.amount > 0)) return fail('Un dépôt du journal est invalide.');
+      const before = capital;
+      const after = money(capital + event.amount);
+      capital = after;
+      basis = money(basis + event.amount);
+      nextDeposits.push({
+        on: event.on,
+        amount: event.amount,
+        capital_before: before,
+        capital_after: after,
+        source: event.source || undefined
+      });
+      continue;
+    }
+    if (event.type === 'statement') {
+      if (!Number.isFinite(event.result_percent)) return fail('Un relevé du journal est invalide.');
+      const before = capital;
+      const after = money(Math.max(0, before * (1 + event.result_percent / 100)));
+      capital = after;
+      const line = {
+        on: event.on,
+        result_percent: event.result_percent,
+        capital_before: before,
+        capital_after: after,
+        market: true,
+        source: event.source || undefined
+      };
+      if (event.raw && event.raw.regime) line.regime = event.raw.regime;
+      if (event.raw && event.raw.regime_label) line.regime_label = event.raw.regime_label;
+      nextStatements.push(line);
+      continue;
+    }
+    if (!(event.amount > 0)) return fail('Un retrait du journal est invalide.');
+    if (event.amount > capital) {
+      return fail(`Le retrait du ${event.on} (${event.amount}) dépasse le capital alors disponible (${capital}).`);
+    }
+    const share = capital ? event.amount / capital : 0;
+    const basisOut = money(basis * share);
+    const profit = money(Math.max(0, event.amount - basisOut));
+    const tax = money(profit * 0.15);
+    const before = capital;
+    const after = money(capital - event.amount);
+    capital = after;
+    basis = money(basis - basisOut);
+    withdrawnTotal = money(withdrawnTotal + event.amount);
+    const entry = {
+      on: event.on,
+      amount: event.amount,
+      tax,
+      net: money(event.amount - tax),
+      profit,
+      basis_out: basisOut,
+      capital_before: before,
+      capital_after: after,
+      withdrawn_total: withdrawnTotal,
+      source: event.source || undefined,
+      transfer_to_offer: event.transfer_to_offer || undefined
+    };
+    nextWithdrawals.push(entry);
+    lastWithdrawal = entry;
+  }
+
+  const patch = {
+    deposits: nextDeposits,
+    withdrawals: nextWithdrawals,
+    statements: nextStatements,
+    capital_balance: capital,
+    cost_basis: capital > 0 ? basis : 0,
+    withdrawn_total: withdrawnTotal
+  };
+  if (lastWithdrawal) patch.withdrawal = lastWithdrawal;
+  else if (row.withdrawal) patch.withdrawal = null;
+  const status = String(row.status || '').trim();
+  if (capital > 0) {
+    if (status === 'clos' || status === 'paye') patch.status = 'ouvert';
+  } else if (status !== 'pause' && nextWithdrawals.length) {
+    patch.status = 'clos';
+    patch.closed_at = row.closed_at || new Date().toISOString();
+  }
+  return { row: patch };
+}
+
+function catchUpFund(row, body) {
+  if (row.status === 'clos' || row.status === 'paye') {
+    // Une correction peut rouvrir le dossier si le capital redevient positif.
+  }
+  const kind = String(body.kind || body.entry_kind || '').trim().toLowerCase();
+  const on = String(body.on || '').trim().slice(0, 10);
+  if (!validDate(on)) return fail('La date est obligatoire.');
+
+  const deposits = (Array.isArray(row.deposits) ? row.deposits : []).map((item) => ({ ...item }));
+  const withdrawals = fundHistory(row).map((item) => ({ ...item }));
+  const statements = (Array.isArray(row.statements) ? row.statements : []).map((item) => ({ ...item }));
+
+  if (kind === 'deposit' || kind === 'ajout' || kind === 'add_deposit') {
+    const amount = money(body.amount);
+    if (!(amount > 0)) return fail('Le montant du dépôt est obligatoire.');
+    deposits.push({ on, amount, source: 'manual' });
+  } else if (kind === 'withdraw' || kind === 'retrait' || kind === 'add_withdrawal') {
+    const amount = money(body.amount);
+    if (!(amount > 0)) return fail('Le montant du retrait est obligatoire.');
+    withdrawals.push({ on, amount, source: 'manual' });
+  } else if (kind === 'statement' || kind === 'releve' || kind === 'market') {
+    const raw = body.result_percent != null ? body.result_percent : body.result;
+    const pct = Number(String(raw ?? '').trim().replace(',', '.'));
+    if (!Number.isFinite(pct)) return fail('Le résultat de marché est obligatoire.');
+    if (statements.some((item) => item && item.market && String(item.on).slice(0, 10) === on)) {
+      return fail('Un relevé de marché existe déjà à cette date.');
+    }
+    statements.push({ on, result_percent: pct, market: true, source: 'manual' });
+  } else {
+    return fail('Le type d’entrée est dépôt, retrait ou relevé.');
+  }
+
+  return rebuildFundTimeline(row, deposits, withdrawals, statements);
+}
+
 function moveGoldstein(row, body) {
   const amount = money(body.amount);
   if (!(amount > 0)) return fail('Le montant du mouvement est obligatoire.');
@@ -333,7 +499,7 @@ function moveGoldstein(row, body) {
 }
 
 const PRODUCTS = {
-  speculative_funds: { collection: 'pret_speculative_funds', prepare: speculative, render: 'fonds', move: moveFund },
+  speculative_funds: { collection: 'pret_speculative_funds', prepare: speculative, render: 'fonds', move: moveFund, catchUp: catchUpFund },
   pawn_loans: { collection: 'pret_pawn_loans', prepare: pawn, render: pawnEmbed, usesRecordId: true },
   consigne_contracts: { collection: 'pret_consigne_contracts', prepare: consigne, render: consigneEmbed, payWeek: payConsigneWeek },
   term_savings: { collection: 'pret_term_savings', prepare: term, render: termEmbed, settle: settleTerm, validate: validateTerm },
@@ -341,4 +507,4 @@ const PRODUCTS = {
   goldstein_booklets: { collection: 'pret_goldstein_booklets', prepare: goldstein, render: goldsteinEmbed, move: moveGoldstein }
 };
 
-module.exports = { PRODUCTS };
+module.exports = { PRODUCTS, catchUpFund, rebuildFundTimeline };

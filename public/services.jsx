@@ -88,12 +88,21 @@ function MarketBoard({ market }) {
     </div>
   </div>;
 }
+function fundLineRank(kind) {
+  if (kind === 'deposit') return 0;
+  if (kind === 'statement') return 1;
+  return 2;
+}
 function fundLines(statements, deposits, withdrawals) {
   const taken = Array.isArray(withdrawals) ? withdrawals : fundWithdrawals(withdrawals);
   return (Array.isArray(statements) ? statements : []).map((item) => ({ kind: 'statement', ...item }))
     .concat((Array.isArray(deposits) ? deposits : []).map((item) => ({ kind: 'deposit', ...item })))
     .concat(taken.map((item) => ({ kind: 'withdrawal', ...item })))
-    .sort((left, right) => bfRpIso(left.on || '').localeCompare(bfRpIso(right.on || '')));
+    .sort((left, right) => {
+      const byDate = bfRpIso(left.on || '').localeCompare(bfRpIso(right.on || ''));
+      if (byDate) return byDate;
+      return fundLineRank(left.kind) - fundLineRank(right.kind);
+    });
 }
 function fundTaxText(item) {
   if (item.tax == null || item.tax === '') return '—';
@@ -610,7 +619,7 @@ function OfferBoard({ kicker, title, note, action, rows, tabs, categoryOf, prese
 function ficheLine(label, value, color) {
   return <p key={label}>{label} : <b style={color ? { color } : undefined}>{value || '—'}</b></p>;
 }
-function FicheShell({ reference, title, telegram, agencyLabel, author, onBack, badges, left, right, children, actions }) {
+function FicheShell({ reference, title, telegram, agencyLabel, author, onBack, badges, left, right, rightExtra, children, actions }) {
   return <div>
     <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#4d8fbd', cursor: 'pointer', marginBottom: 16 }}>← Retour</button>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
@@ -630,7 +639,10 @@ function FicheShell({ reference, title, telegram, agencyLabel, author, onBack, b
         <p>Agence : <b>{agencyLabel || '—'}</b></p>
         {left}
       </div>
-      <div>{right}</div>
+      <div>
+        {rightExtra ? <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>{rightExtra}</div> : null}
+        {right}
+      </div>
     </div>
     {children}
     {actions ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16, alignItems: 'end' }}>{actions}</div> : null}
@@ -727,10 +739,12 @@ function serviceOrder(service) {
   };
 }
 
-function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave, formOnly }) {
+function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clients, focusId, createFor, onLeave, formOnly, me }) {
   const { useState, useEffect } = BFReact;
   const { Btn, Inp, Select } = bfKit();
   const spec = BF_SERVICES[service];
+  const actor = me || bfKit().me;
+  const canCatchUpFund = !!(bfKit().canOpenDirection && bfKit().canOpenDirection(actor));
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(() => {
     if (!createFor || !createFor.id) return spec.blank();
@@ -750,6 +764,11 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawTransfer, setWithdrawTransfer] = useState(false);
+  const [catchUpOpen, setCatchUpOpen] = useState(false);
+  const [catchUpKind, setCatchUpKind] = useState('statement');
+  const [catchUpOn, setCatchUpOn] = useState('');
+  const [catchUpAmount, setCatchUpAmount] = useState('');
+  const [catchUpResult, setCatchUpResult] = useState('');
   const [tierDraft, setTierDraft] = useState('');
   const [agency, setAgency] = useState(activeAgence || 'toutes');
   const [market, setMarket] = useState(null);
@@ -874,6 +893,31 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       setMovement('');
     }
   }
+  function openFundCatchUp() {
+    setCatchUpKind('statement');
+    setCatchUpOn(bfRpToday());
+    setCatchUpAmount('');
+    setCatchUpResult('');
+    setCatchUpOpen(true);
+  }
+  async function confirmFundCatchUp() {
+    if (!catchUpOn) return notify('⚠ Indique la date de l’entrée manquante.');
+    const payload = { kind: catchUpKind, on: catchUpOn };
+    if (catchUpKind === 'deposit' || catchUpKind === 'withdraw') {
+      const amount = bfMoney(catchUpAmount);
+      if (!(amount > 0)) return notify('⚠ Indique le montant.');
+      payload.amount = amount;
+    } else {
+      const raw = String(catchUpResult || '').trim().replace(',', '.');
+      if (!raw || !Number.isFinite(Number(raw))) return notify('⚠ Indique le résultat de marché (%).');
+      payload.result_percent = Number(raw);
+    }
+    if (await act('catch_up', payload)) {
+      setCatchUpOpen(false);
+      setCatchUpAmount('');
+      setCatchUpResult('');
+    }
+  }
   function begin() {
     const next = spec.blank();
     const scope = agency && agency !== 'toutes' ? agency : '';
@@ -940,6 +984,9 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       onBack={leaveFiche}
       left={sides.left.map(([label, value]) => ficheLine(label, value))}
       right={sides.right.map(([label, value, color]) => ficheLine(label, value, color))}
+      rightExtra={service === 'speculative_funds' && canCatchUpFund
+        ? <Btn color="#555" disabled={busy} onClick={openFundCatchUp}>Corriger une entrée</Btn>
+        : null}
       actions={<>
         {service === 'consigne_contracts' && selected.status !== 'clos' && selected.status !== 'paye' && (
           <Btn disabled={busy} onClick={() => act('pay_week')}>Régler la semaine ({bfFr(selected.weekly_total)})</Btn>
@@ -1021,6 +1068,26 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
             </div>
           </FormPopup>;
         })()}
+        {service === 'speculative_funds' && catchUpOpen && <FormPopup title="Corriger une entrée manquante" onClose={() => !busy && setCatchUpOpen(false)}>
+          <Part title="Rattrapage" plain>
+            <p style={{ color: '#c9a567', margin: '0 0 12px' }}>Ajoute une ligne oubliée au journal. Les soldes seront recalculés chronologiquement.</p>
+          </Part>
+          <Part title="Entrée">
+            <Select label="Type" value={catchUpKind} onChange={(event) => setCatchUpKind(event.target.value)}>
+              <option value="statement">Entrée de fond spéculatif (relevé de marché)</option>
+              <option value="deposit">Ajout de fonds</option>
+              <option value="withdraw">Retrait</option>
+            </Select>
+            <Inp label="Date" type="date" value={catchUpOn} onChange={(event) => setCatchUpOn(event.target.value)} />
+            {(catchUpKind === 'deposit' || catchUpKind === 'withdraw')
+              ? <Inp label="Montant" type="number" min="0" step="0.01" value={catchUpAmount} onChange={(event) => setCatchUpAmount(event.target.value)} />
+              : <Inp label="Résultat de marché (%)" type="number" step="0.1" value={catchUpResult} onChange={(event) => setCatchUpResult(event.target.value)} />}
+          </Part>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+            <Btn color="#555" disabled={busy} onClick={() => setCatchUpOpen(false)}>Annuler</Btn>
+            <Btn disabled={busy} onClick={confirmFundCatchUp}>{busy ? 'Enregistrement…' : 'Insérer la ligne'}</Btn>
+          </div>
+        </FormPopup>}
         {termOpen && <>
           <Btn color="#2ecc71" disabled={busy || selected.validated} onClick={() => act('validate_dossier')}>
             {selected.validated ? 'Paiement validé' : 'Valider le paiement'}

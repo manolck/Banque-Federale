@@ -405,6 +405,57 @@ assert.ok(fundTierChange.title.includes('Changement de palier'));
 assert.ok(fundTierChange.description.includes('Palier I'));
 assert.ok(fundTierChange.description.includes('Palier II'));
 assert.strictEqual(fundTierChange.color, 0xd7a64d);
+const { catchUpFund } = require('../server_api/products');
+const fundCatchBase = {
+  status: 'ouvert',
+  amount: 1000,
+  capital_balance: 1100,
+  cost_basis: 1000,
+  withdrawn_total: 0,
+  deposits: [],
+  withdrawals: [],
+  statements: [{ on: '1904-10-05', result_percent: 10, capital_before: 1000, capital_after: 1100, market: true }]
+};
+const fundCatchDeposit = catchUpFund(fundCatchBase, { kind: 'deposit', on: '1904-10-03', amount: 500 });
+assert.strictEqual(fundCatchDeposit.error, undefined);
+assert.strictEqual(fundCatchDeposit.row.deposits.length, 1);
+assert.strictEqual(fundCatchDeposit.row.deposits[0].on, '1904-10-03');
+assert.strictEqual(fundCatchDeposit.row.statements[0].capital_before, 1500);
+assert.strictEqual(fundCatchDeposit.row.statements[0].capital_after, 1650);
+assert.strictEqual(fundCatchDeposit.row.capital_balance, 1650);
+assert.strictEqual(fundCatchDeposit.row.cost_basis, 1500);
+const fundCatchWithdraw = catchUpFund({
+  ...fundCatchBase,
+  capital_balance: 1650,
+  cost_basis: 1500,
+  deposits: [{ on: '1904-10-03', amount: 500, capital_before: 1000, capital_after: 1500 }],
+  statements: [{ on: '1904-10-05', result_percent: 10, capital_before: 1500, capital_after: 1650, market: true }]
+}, { kind: 'withdraw', on: '1904-10-04', amount: 300 });
+assert.strictEqual(fundCatchWithdraw.error, undefined);
+assert.strictEqual(fundCatchWithdraw.row.withdrawals.length, 1);
+assert.strictEqual(fundCatchWithdraw.row.withdrawals[0].on, '1904-10-04');
+assert.strictEqual(fundCatchWithdraw.row.statements[0].capital_before, 1200);
+assert.strictEqual(fundCatchWithdraw.row.capital_balance, 1320);
+const fundCatchStatement = catchUpFund({
+  status: 'ouvert',
+  amount: 1000,
+  capital_balance: 1000,
+  cost_basis: 1000,
+  withdrawn_total: 0,
+  deposits: [],
+  withdrawals: [],
+  statements: []
+}, { kind: 'statement', on: '1904-10-12', result_percent: -5 });
+assert.strictEqual(fundCatchStatement.error, undefined);
+assert.strictEqual(fundCatchStatement.row.statements.length, 1);
+assert.strictEqual(fundCatchStatement.row.capital_balance, 950);
+const fundCatchNotice = actions.serviceNotice('speculative_funds', 'catch_up', {
+  full_name: 'Ada Lovelace', dossier_number: 'FS-000001', capital_balance: 1650,
+  catch_up: { kind: 'deposit', on: '1904-10-03', amount: 500 }
+});
+assert.ok(fundCatchNotice.title.includes('Correction manuelle'));
+assert.ok(fundCatchNotice.description.includes('Dépôt'));
+assert.strictEqual(fundCatchNotice.color, 0xd7a64d);
 const lifeClosureAsk = actions.lifeNotice('request_closure', {
   subscriber_first_name: 'Ada', subscriber_last_name: 'Lovelace', contract_number: 'AV-000001'
 }, { balance: 1000, fee: 150, net: 850 });

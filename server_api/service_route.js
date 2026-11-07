@@ -1,8 +1,12 @@
 const { sb, json, readBody, currentUser, hasPermission, logAction, handler, roleCodeOf } = require('./_lib');
 
 const CAN_DELETE_SERVICE = new Set(['TECHNICIAN', 'DIRECTOR', 'DEPUTY_DIRECTOR']);
+const CAN_CATCH_UP_FUND = new Set(['TECHNICIAN', 'DIRECTOR', 'DEPUTY_DIRECTOR']);
 function canDeleteService(actor) {
   return CAN_DELETE_SERVICE.has(roleCodeOf(actor));
+}
+function canCatchUpFund(actor) {
+  return CAN_CATCH_UP_FUND.has(roleCodeOf(actor));
 }
 const { PRODUCTS } = require('./products');
 const { discordUrlOk } = require('./discord_forms');
@@ -109,6 +113,21 @@ function createServiceRoute(name) {
           return json(res, 400, { error: 'Ce dossier est déjà sur ce palier.' });
         }
         patch = { tier, previous_tier: current.data.tier || '' };
+      } else if (body.action === 'catch_up') {
+        if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });
+        if (!canCatchUpFund(actor)) {
+          return json(res, 403, { error: 'Correction réservée au technicien, au directeur et au directeur adjoint.' });
+        }
+        if (!product.catchUp) return json(res, 400, { error: 'Action inconnue.' });
+        const caught = product.catchUp(current.data, body);
+        if (caught.error) return json(res, 400, { error: caught.error });
+        patch = caught.row;
+        patch.catch_up = {
+          kind: String(body.kind || body.entry_kind || '').trim().toLowerCase(),
+          on: String(body.on || '').trim().slice(0, 10),
+          amount: body.amount,
+          result_percent: body.result_percent != null ? body.result_percent : body.result
+        };
       } else if (body.discord_url) {
         if (!discordUrlOk(body.discord_url)) return json(res, 400, { error: 'Lien Discord invalide.' });
         patch = { discord_url: body.discord_url, discord_posted_at: null };
@@ -116,7 +135,7 @@ function createServiceRoute(name) {
         return json(res, 400, { error: 'Action inconnue.' });
       }
       const next = { ...current.data, ...patch };
-      if (name === 'speculative_funds' && (body.action === 'deposit' || body.action === 'withdraw' || body.action === 'pause' || body.action === 'resume' || body.action === 'close' || body.action === 'change_tier')) {
+      if (name === 'speculative_funds' && (body.action === 'deposit' || body.action === 'withdraw' || body.action === 'pause' || body.action === 'resume' || body.action === 'close' || body.action === 'change_tier' || body.action === 'catch_up')) {
         const { ensureFundDiscordUrl } = require('./fonds_forum_sync');
         await ensureFundDiscordUrl(next);
         if (next.discord_url && next.discord_url !== current.data.discord_url) {
@@ -125,8 +144,9 @@ function createServiceRoute(name) {
         }
       }
       const embed = serviceNotice(name, body.action, next);
-      // previous_tier ne sert qu’à la notice Discord, pas au stockage.
+      // Champs temporaires pour la notice Discord uniquement.
       if (patch.previous_tier !== undefined) delete patch.previous_tier;
+      if (patch.catch_up !== undefined) delete patch.catch_up;
       Object.assign(patch, enqueueNotice(next, embed));
       const updated = await sb.from(product.collection).update(patch).eq('id', body.id).select().single();
       if (updated.error) return json(res, 500, { error: updated.error.message });
