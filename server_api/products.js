@@ -4,7 +4,7 @@ const {
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
 } = require('./discord_forms');
-const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, fundOpening, fundContributedFields, termPayout, datedLike, rpToday, addDays, asRpDay } = require('./money');
+const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, fundOpening, fundContributedFields, termPayout, datedLike, rpToday, addDays, asRpDay, rpIso } = require('./money');
 const { safeId } = require('./ids');
 
 function agencyOf(value) {
@@ -317,13 +317,14 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
   const events = [];
   for (const item of deposits || []) {
     if (!item || !item.on) continue;
-    events.push({ type: 'deposit', on: String(item.on).slice(0, 10), amount: money(item.amount), source: item.source || '', raw: item });
+    const on = rpIso(item.on) || String(item.on).slice(0, 10);
+    events.push({ type: 'deposit', on, amount: money(item.amount), source: item.source || '', raw: item });
   }
   for (const item of statements || []) {
     if (!item || !item.on) continue;
     events.push({
       type: 'statement',
-      on: String(item.on).slice(0, 10),
+      on: rpIso(item.on) || String(item.on).slice(0, 10),
       result_percent: Number(item.result_percent),
       source: item.source || '',
       raw: item
@@ -333,7 +334,7 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
     if (!item || !item.on) continue;
     events.push({
       type: 'withdraw',
-      on: String(item.on).slice(0, 10),
+      on: rpIso(item.on) || String(item.on).slice(0, 10),
       amount: money(item.amount),
       source: item.source || '',
       transfer_to_offer: !!item.transfer_to_offer,
@@ -475,8 +476,9 @@ function catchUpFund(row, body) {
     return rebuildFundTimeline(row, deposits, withdrawals, statements);
   }
 
-  const on = String(body.on || '').trim().slice(0, 10);
-  if (!validDate(on)) return fail('La date est obligatoire.');
+  const rawOn = String(body.on || '').trim().slice(0, 10);
+  if (!validDate(rawOn)) return fail('La date est obligatoire.');
+  const on = rpIso(rawOn) || rawOn;
 
   if (kind === 'deposit' || kind === 'ajout' || kind === 'add_deposit') {
     const amount = money(body.amount);
@@ -490,7 +492,7 @@ function catchUpFund(row, body) {
     const raw = body.result_percent != null ? body.result_percent : body.result;
     const pct = Number(String(raw ?? '').trim().replace(',', '.'));
     if (!Number.isFinite(pct)) return fail('Le résultat de marché est obligatoire.');
-    if (statements.some((item) => item && item.market && String(item.on).slice(0, 10) === on)) {
+    if (statements.some((item) => item && item.market && (rpIso(item.on) || String(item.on).slice(0, 10)) === on)) {
       return fail('Un relevé de marché existe déjà à cette date.');
     }
     statements.push({ on, result_percent: pct, market: true, source: 'manual' });

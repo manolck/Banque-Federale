@@ -153,8 +153,14 @@ assert.strictEqual(fundAdded.capital_after, 2100);
 assert.strictEqual(fundAdded.cost_basis, 1600);
 assert.strictEqual(money.fundContributed({ amount: 1500, deposits: [{ amount: 100 }] }), 1600);
 assert.strictEqual(money.fundContributed({ opening_amount: 1500, amount: 1600, deposits: [{ amount: 100 }] }), 1600);
-assert.deepStrictEqual(money.fundContributedFields({ amount: 1500 }, [{ amount: 100 }]), { opening_amount: 1500, amount: 1600 });
-assert.deepStrictEqual(money.fundContributedFields({ opening_amount: 1500, amount: 1600 }, [{ amount: 100 }, { amount: 50 }]), { opening_amount: 1500, amount: 1650 });
+assert.strictEqual(money.fundOpening({ amount: 1600, deposits: [{ on: '1904-10-01', amount: 100, capital_before: 1500 }] }), 1500);
+assert.strictEqual(money.fundOpening({
+  amount: 1100,
+  deposits: [{ on: '1904-11-05', amount: 100, capital_before: 1100 }],
+  statements: [{ on: '1904-10-05', result_percent: 10, capital_before: 1000, capital_after: 1100 }]
+}), 1000);
+assert.deepStrictEqual(money.fundContributedFields({ amount: 1500 }, [{ amount: 100 }]), { opening_amount: 1500, amount: 1500 });
+assert.deepStrictEqual(money.fundContributedFields({ opening_amount: 1500, amount: 1600 }, [{ amount: 100 }, { amount: 50 }]), { opening_amount: 1500, amount: 1500 });
 assert.strictEqual(money.fundWithdrawnTotal({ withdrawn_total: 400 }), 400);
 assert.strictEqual(fonds.WEEKLY_RATE, null);
 assert.strictEqual(money.stateOf('blackwater'), 'texas');
@@ -430,7 +436,7 @@ assert.strictEqual(fundCatchDeposit.row.statements[0].capital_after, 1650);
 assert.strictEqual(fundCatchDeposit.row.capital_balance, 1650);
 assert.strictEqual(fundCatchDeposit.row.cost_basis, 1500);
 assert.strictEqual(fundCatchDeposit.row.opening_amount, 1000);
-assert.strictEqual(fundCatchDeposit.row.amount, 1500);
+assert.strictEqual(fundCatchDeposit.row.amount, 1000);
 const fundCatchLateDeposit = catchUpFund({
   status: 'ouvert',
   amount: 1000,
@@ -446,8 +452,26 @@ assert.strictEqual(fundCatchLateDeposit.error, undefined);
 assert.strictEqual(fundCatchLateDeposit.row.deposits[0].capital_before, 1100);
 assert.strictEqual(fundCatchLateDeposit.row.deposits[0].capital_after, 1200);
 assert.strictEqual(fundCatchLateDeposit.row.capital_balance, 1200);
-assert.strictEqual(fundCatchLateDeposit.row.amount, 1100);
+assert.strictEqual(fundCatchLateDeposit.row.amount, 1000);
 assert.strictEqual(fundCatchLateDeposit.row.cost_basis, 1100);
+assert.strictEqual(money.fundContributed(fundCatchLateDeposit.row), 1100);
+// amount déjà gonflé au capital versé : le recalcul repart bien du capital de souscription.
+const fundCatchHealed = catchUpFund({
+  status: 'ouvert',
+  amount: 1100,
+  capital_balance: 1200,
+  cost_basis: 1100,
+  withdrawn_total: 0,
+  deposits: [{ on: '1904-11-05', amount: 100, capital_before: 1100, capital_after: 1200 }],
+  withdrawals: [],
+  statements: [{ on: '1904-10-05', result_percent: 10, capital_before: 1000, capital_after: 1100, market: true }]
+}, { kind: 'deposit', on: '1904-11-06', amount: 50 });
+assert.strictEqual(fundCatchHealed.error, undefined);
+assert.strictEqual(fundCatchHealed.row.opening_amount, 1000);
+assert.strictEqual(fundCatchHealed.row.amount, 1000);
+assert.strictEqual(fundCatchHealed.row.deposits[0].capital_before, 1100);
+assert.strictEqual(fundCatchHealed.row.deposits[1].capital_before, 1200);
+assert.strictEqual(fundCatchHealed.row.capital_balance, 1250);
 const fundCatchWithdraw = catchUpFund({
   ...fundCatchBase,
   capital_balance: 1650,
@@ -497,6 +521,7 @@ assert.strictEqual(fundCatchRemove.row.capital_balance, 1100);
 assert.strictEqual(fundCatchRemove.row.cost_basis, 1000);
 assert.strictEqual(fundCatchRemove.row.amount, 1000);
 assert.strictEqual(fundCatchRemove.row.opening_amount, 1000);
+assert.strictEqual(money.fundContributed(fundCatchRemove.row), 1000);
 const fundCatchRemoveNotice = actions.serviceNotice('speculative_funds', 'catch_up', {
   full_name: 'Ada Lovelace', dossier_number: 'FS-000001', capital_balance: 1100,
   catch_up: { remove: true, kind: 'deposit', on: '1904-10-03', amount: 500 }

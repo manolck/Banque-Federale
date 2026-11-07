@@ -316,10 +316,23 @@ function fundWithdrawals(row) {
 
 function fundOpening(row) {
   if (!row) return 0;
-  // Capital initial de souscription. Une fois synchronisé, opening_amount reste stable
-  // et amount porte le capital versé total (opening + dépôts).
+  // Capital initial de souscription (hors dépôts ultérieurs).
   if (row.opening_amount != null && row.opening_amount !== '') return money(row.opening_amount);
-  return money(row.amount);
+  const amount = money(row.amount);
+  const deposits = Array.isArray(row.deposits) ? row.deposits : [];
+  if (!deposits.length) return amount;
+  const depositSum = deposits.reduce((sum, item) => sum + money(item && item.amount), 0);
+  const candidate = money(amount - depositSum);
+  // Si amount a été porté au capital versé, amount - dépôts redonne la souscription initiale.
+  if (!(candidate > 0) || candidate === amount) return amount;
+  const byOn = (left, right) => String(left && left.on || '').localeCompare(String(right && right.on || ''));
+  const firstDeposit = deposits.slice().filter((item) => item && item.on).sort(byOn)[0];
+  const firstStatement = (Array.isArray(row.statements) ? row.statements : []).slice().filter((item) => item && item.on).sort(byOn)[0];
+  if (firstStatement && money(firstStatement.capital_before) === candidate) return candidate;
+  if (firstDeposit && money(firstDeposit.capital_before) === candidate) {
+    if (!firstStatement || String(firstDeposit.on || '') <= String(firstStatement.on || '')) return candidate;
+  }
+  return amount;
 }
 
 function fundContributed(row) {
@@ -331,8 +344,8 @@ function fundContributed(row) {
 function fundContributedFields(row, deposits) {
   const list = Array.isArray(deposits) ? deposits : (Array.isArray(row && row.deposits) ? row.deposits : []);
   const opening = fundOpening(row);
-  const added = list.reduce((sum, item) => sum + money(item && item.amount), 0);
-  return { opening_amount: opening, amount: money(opening + added) };
+  // amount reste le capital de souscription ; Souscrit affiché = opening + dépôts.
+  return { opening_amount: opening, amount: opening };
 }
 
 function fundWithdrawnTotal(row) {

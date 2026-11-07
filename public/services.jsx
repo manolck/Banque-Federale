@@ -114,8 +114,8 @@ function fundTaxText(item) {
   if (item.tax == null || item.tax === '') return '—';
   return Number(item.tax) ? bfFr(item.tax) : 'Aucune';
 }
-function FundStatements({ statements, deposits, withdrawals }) {
-  const lines = fundLines(statements, deposits, withdrawals);
+function FundStatements({ row, statements, deposits, withdrawals }) {
+  const lines = row ? bfFundReplayLines(row) : fundLines(statements, deposits, withdrawals);
   if (!lines.length) return null;
   return <div className="bvh-ledger" style={{ marginTop: 16 }}>
     <div className="bvh-ledger-title">Relevés hebdomadaires</div>
@@ -185,11 +185,51 @@ function bfFundWithdrawals(row) {
 }
 function bfFundOpening(row) {
   if (row && row.opening_amount != null && row.opening_amount !== '') return bfMoney(row.opening_amount);
-  return bfMoney(row && row.amount);
+  const amount = bfMoney(row && row.amount);
+  const deposits = Array.isArray(row && row.deposits) ? row.deposits : [];
+  if (!deposits.length) return amount;
+  const depositSum = deposits.reduce((sum, item) => sum + bfMoney(item && item.amount), 0);
+  const candidate = bfMoney(amount - depositSum);
+  if (!(candidate > 0) || candidate === amount) return amount;
+  const byOn = (left, right) => bfRpIso(left && left.on).localeCompare(bfRpIso(right && right.on));
+  const firstDeposit = deposits.slice().filter((item) => item && item.on).sort(byOn)[0];
+  const firstStatement = (Array.isArray(row && row.statements) ? row.statements : []).slice().filter((item) => item && item.on).sort(byOn)[0];
+  if (firstStatement && bfMoney(firstStatement.capital_before) === candidate) return candidate;
+  if (firstDeposit && bfMoney(firstDeposit.capital_before) === candidate) {
+    if (!firstStatement || bfRpIso(firstDeposit.on) <= bfRpIso(firstStatement.on)) return candidate;
+  }
+  return amount;
 }
 function bfFundContributed(row) {
   const added = (Array.isArray(row && row.deposits) ? row.deposits : []).reduce((sum, item) => sum + bfMoney(item && item.amount), 0);
   return bfMoney(bfFundOpening(row) + added);
+}
+function bfFundReplayLines(row) {
+  const deposits = Array.isArray(row && row.deposits) ? row.deposits : [];
+  const statements = Array.isArray(row && row.statements) ? row.statements : [];
+  const withdrawals = fundWithdrawals(row);
+  const events = deposits.map((item, sourceIndex) => ({ kind: 'deposit', sourceIndex, item }))
+    .concat(statements.map((item, sourceIndex) => ({ kind: 'statement', sourceIndex, item })))
+    .concat(withdrawals.map((item, sourceIndex) => ({ kind: 'withdrawal', sourceIndex, item })))
+    .filter((event) => event.item && event.item.on)
+    .sort((left, right) => {
+      const byDate = bfRpIso(left.item.on).localeCompare(bfRpIso(right.item.on));
+      if (byDate) return byDate;
+      return fundLineRank(left.kind) - fundLineRank(right.kind);
+    });
+  let capital = bfFundOpening(row);
+  return events.map((event) => {
+    const before = capital;
+    let after = before;
+    if (event.kind === 'deposit') after = bfMoney(before + bfMoney(event.item.amount));
+    else if (event.kind === 'withdrawal') after = bfMoney(before - bfMoney(event.item.amount));
+    else {
+      const pct = Number(event.item.result_percent);
+      after = Number.isFinite(pct) ? bfMoney(Math.max(0, before * (1 + pct / 100))) : before;
+    }
+    capital = after;
+    return { ...event.item, kind: event.kind, sourceIndex: event.sourceIndex, capital_before: before, capital_after: after };
+  });
 }
 function bfFundWithdrawnTotal(row) {
   if (row && row.withdrawn_total != null && row.withdrawn_total !== '') return bfMoney(row.withdrawn_total);
@@ -1171,7 +1211,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
     >
       {dueRows.length > 0 && <DueLedger title="Échéance" rows={dueRows} />}
       {service === 'goldstein_booklets' && <GoldsteinMovements movements={selected.movements} />}
-      {service === 'speculative_funds' && <FundStatements statements={selected.statements} deposits={selected.deposits} withdrawals={fundWithdrawals(selected)} />}
+      {service === 'speculative_funds' && <FundStatements row={selected} statements={selected.statements} deposits={selected.deposits} withdrawals={fundWithdrawals(selected)} />}
     </FicheShell>;
   }
   if (focusId && !selected) {

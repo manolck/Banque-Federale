@@ -1144,7 +1144,7 @@ body{
 <link rel="stylesheet" href="/front.css" />
 </head>
 <body><div id="root"></div>
-<script type="text/babel" src="/services.jsx?v=20261107c"></script>
+<script type="text/babel" src="/services.jsx?v=20261107d"></script>
 <script type="text/babel">
 const{useState,useEffect,useMemo}=React;
 const C={bg:'#0f1117',card:'#1a1d2e',bord:'#2a2d3e',blue:'#4a9eff',gold:'#f0b429',green:'#2ecc71',red:'#ff4444',orange:'#ff8800',txt:'#e2e8f0',muted:'#8892a0'};
@@ -1472,7 +1472,7 @@ function lifeOffer(client, row){
 function serviceOffer(service, row){
   const closed=offerClosed(service, row);
   let title='Contrat', left=fCur(row.amount), leftLabel='Montant', right=fCur(row.amount_due), rightLabel='Dû', extra='', due='';
-  if(service==='speculative_funds'){const deps=(Array.isArray(row.deposits)?row.deposits:[]).reduce((s,d)=>s+(Number(d&&d.amount)||0),0);const opening=row.opening_amount!=null&&row.opening_amount!==''?Number(row.opening_amount):Number(row.amount)||0;title=row.tier||'Fonds';left=fCur(opening+deps);leftLabel='Souscrit';right=row.capital_balance==null?(row.status||'—'):fCur(row.capital_balance);rightLabel=row.capital_balance==null?'État':'Capital';extra=row.status==='pause'?'En pause':'';}
+  if(service==='speculative_funds'){const deps=(Array.isArray(row.deposits)?row.deposits:[]).reduce((s,d)=>s+(Number(d&&d.amount)||0),0);let opening=row.opening_amount!=null&&row.opening_amount!==''?Number(row.opening_amount):Number(row.amount)||0;if(!(row.opening_amount!=null&&row.opening_amount!=='')&&deps>0){const cand=Math.round((opening-deps)*100)/100;const firstStmt=(Array.isArray(row.statements)?row.statements:[]).filter(s=>s&&s.on).sort((a,b)=>String(a.on).localeCompare(String(b.on)))[0];if(cand>0&&firstStmt&&Number(firstStmt.capital_before)===cand)opening=cand;}title=row.tier||'Fonds';left=fCur(opening+deps);leftLabel='Souscrit';right=row.capital_balance==null?(row.status||'—'):fCur(row.capital_balance);rightLabel=row.capital_balance==null?'État':'Capital';extra=row.status==='pause'?'En pause':'';}
   else if(service==='pawn_loans'){title=row.item_type||'Bien gagé';left=fCur(row.amount);leftLabel='Prêté';right=fCur(row.amount_due||row.repayment);rightLabel='À rembourser';due=row.echeance_date;extra=due?fDate(due):'';}
   else if(service==='consigne_contracts'){title=row.coverage||'Consigne';left=fCur(row.weekly_total);leftLabel='Par semaine';right=fCur(row.stored_value);rightLabel='Déposé';due=row.next_due;extra=due?fDate(due):'';}
   else if(service==='term_savings'){title=row.weeks?`${row.weeks} semaines`:'Épargne';left=fCur(row.amount);leftLabel='Placé';right=fCur(row.settlement?row.settlement.net:(row.maturity_amount||row.amount_due));rightLabel=row.settlement?'Restitué':"À l'échéance";due=row.echeance_date;extra=due?fDate(due):'';}
