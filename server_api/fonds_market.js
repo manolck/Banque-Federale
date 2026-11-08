@@ -280,6 +280,15 @@ function claimFresh(iso, now, ms = 45000) {
   return Number.isFinite(claimed) && now - claimed < ms;
 }
 
+function isDiscordSnowflake(value) {
+  return /^\d{17,20}$/.test(String(value || '').trim());
+}
+
+function marketFullyPosted(data) {
+  const posted = (data && data.posted) || {};
+  return isDiscordSnowflake(posted.releve) || PALIERS.every((nom) => isDiscordSnowflake(posted[nom]));
+}
+
 function queueMarkets(state, date = new Date()) {
   const channel = channelId();
   const now = Date.now();
@@ -297,8 +306,22 @@ function queueMarkets(state, date = new Date()) {
     if (!data || !data.results) continue;
     data.posted = data.posted || {};
     data.claims = data.claims || {};
-    const draftId = String(data.draft_message_id || data.posted.draft || '').trim();
-    const alreadyPosted = !!(data.posted.releve || PALIERS.every((nom) => data.posted[nom]));
+    // Ancien marquage « posted » sans vrai message Discord → on republie.
+    if (data.posted.releve && !isDiscordSnowflake(data.posted.releve)) {
+      delete data.posted.releve;
+      dirty = true;
+    }
+    if (data.posted.draft && !isDiscordSnowflake(data.posted.draft)) {
+      delete data.posted.draft;
+      dirty = true;
+    }
+    if (data.draft_message_id && !isDiscordSnowflake(data.draft_message_id)) {
+      data.draft_message_id = '';
+      dirty = true;
+    }
+    const rawDraft = String(data.draft_message_id || data.posted.draft || '').trim();
+    const draftId = isDiscordSnowflake(rawDraft) ? rawDraft : '';
+    const alreadyPosted = marketFullyPosted(data);
     const readyToPublish = !!data.applied && publishReached(date, week);
     if (alreadyPosted) continue;
 
@@ -409,6 +432,7 @@ async function settleFunds(funds, date) {
   for (const weekKey of toApply) {
     const week = state.weeks[weekKey];
     const totals = blankTotals();
+    let notices = 0;
     for (const row of funds || []) {
       if (!fundOpenForMarket(row)) continue;
       const existing = marketLine(row, weekKey);
@@ -431,6 +455,7 @@ async function settleFunds(funds, date) {
       }
       const embed = serviceNotice('speculative_funds', 'market', next);
       Object.assign(patch, enqueueNotice(next, embed));
+      if (patch.discord_notices) notices += 1;
       const updated = await sb.from('pret_speculative_funds').update(patch).eq('id', row.id);
       if (updated.error) throw new Error(updated.error.message);
       Object.assign(row, patch);
@@ -439,20 +464,54 @@ async function settleFunds(funds, date) {
     week.totals = totals;
     week.applied = true;
     week.applied_at = now.toISOString();
+    week.dossier_notices_sent = true;
     week.claims = {};
     if (!state.next || state.next <= weekKey) state.next = addDays(weekKey, 7);
-    console.log(`Application des fonds ${weekKey} sur les dossiers ouverts`);
+    console.log(`Application des fonds ${weekKey} sur les dossiers ouverts (${notices} avis dossier)`);
     dirty = true;
   }
 
-  // Reprise Discord : dernière séance appliquée non publiée — lever un claim coincé.
+  // Rattrapage : séance déjà appliquée avant l’ajout des avis dossier.
+  for (const weekKey of Object.keys(state.weeks || {}).sort()) {
+    const week = state.weeks[weekKey];
+    if (!week || !week.applied || !week.results || week.dossier_notices_sent) continue;
+    if (!publishReached(now, weekKey)) continue;
+    let notices = 0;
+    for (const row of funds || []) {
+      if (!fundOpenForMarket(row)) continue;
+      const statement = marketLine(row, weekKey);
+      if (!statement) continue;
+      const patch = {};
+      const next = { ...row, market_statement: statement };
+      try {
+        await ensureFundDiscordUrl(next);
+        if (next.discord_url && next.discord_url !== row.discord_url) {
+          patch.discord_url = next.discord_url;
+          if (next.discord_posted_at) patch.discord_posted_at = next.discord_posted_at;
+        }
+      } catch (error) {
+        console.error('Lien Discord fonds', row.dossier_number || row.id, error.message || error);
+      }
+      const embed = serviceNotice('speculative_funds', 'market', next);
+      Object.assign(patch, enqueueNotice(next, embed));
+      if (!patch.discord_notices) continue;
+      const updated = await sb.from('pret_speculative_funds').update(patch).eq('id', row.id);
+      if (updated.error) throw new Error(updated.error.message);
+      Object.assign(row, patch);
+      notices += 1;
+    }
+    week.dossier_notices_sent = true;
+    week.claims = {};
+    dirty = true;
+    console.log(`Rattrapage avis dossiers ${weekKey} : ${notices} fil(s)`);
+  }
+
+  // Reprise Discord global : séance appliquée sans vrai message snowflake.
   const latestUnposted = Object.keys(state.weeks || {}).sort().reverse().find((week) => {
     const data = state.weeks[week];
-    if (!data || !data.results || !data.applied) return false;
-    const posted = data.posted || {};
-    return !(posted.releve || PALIERS.every((nom) => posted[nom]));
+    return data && data.results && data.applied && publishReached(now, week) && !marketFullyPosted(data);
   });
-  if (latestUnposted && publishReached(now, latestUnposted)) {
+  if (latestUnposted) {
     const data = state.weeks[latestUnposted];
     data.claims = data.claims || {};
     if (data.claims.releve || data.claims.draft) {
@@ -465,10 +524,21 @@ async function settleFunds(funds, date) {
   const queued = queueMarkets(state, now);
   if (dirty || queued.dirty) await saveState(state);
   const items = queued.items;
+  const weeksInfo = Object.keys(state.weeks || {}).sort().slice(-3).map((week) => {
+    const data = state.weeks[week] || {};
+    return {
+      week,
+      applied: !!data.applied,
+      dossier_notices_sent: !!data.dossier_notices_sent,
+      posted: !!(data.posted && data.posted.releve),
+      posted_id: data.posted && data.posted.releve ? String(data.posted.releve).slice(0, 24) : ''
+    };
+  });
   items.meta = {
     channel: queued.channel,
     pending: queued.pending,
-    next: state.next
+    next: state.next,
+    weeks: weeksInfo
   };
   return items;
 }
@@ -483,14 +553,16 @@ async function acknowledgeMarket(week, palier, messageId) {
   const data = state && state.weeks && state.weeks[week];
   if (!data) return { status: 404, error: 'Séance introuvable.' };
   const posted = { ...(data.posted || {}) };
+  const snowflake = isDiscordSnowflake(messageId) ? String(messageId).trim() : '';
+  if (!snowflake) return { status: 400, error: 'Identifiant Discord de message invalide.' };
   if (draft) {
-    posted.draft = messageId || 'posted';
-    if (messageId) data.draft_message_id = String(messageId);
+    posted.draft = snowflake;
+    data.draft_message_id = snowflake;
   } else {
-    posted[palier] = messageId || 'posted';
+    posted[palier] = snowflake;
     if (releve) {
-      for (const nom of PALIERS) posted[nom] = messageId || 'posted';
-      if (messageId) data.draft_message_id = String(messageId);
+      for (const nom of PALIERS) posted[nom] = snowflake;
+      data.draft_message_id = snowflake;
     }
   }
   data.posted = posted;

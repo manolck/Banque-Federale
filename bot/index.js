@@ -453,26 +453,32 @@ async function runDaily(client) {
 }
 
 async function flushMarkets(client, label = 'Market') {
-  const queue = await api('GET', undefined, '?job=market');
-  const meta = queue.markets_meta || {};
-  if (meta.channel === false) {
-    console.error(`${label} — ni DISCORD_FUNDS_CHANNEL_ID ni DISCORD_FUNDS_FORUM_ID côté API`);
-  }
-  if (Array.isArray(meta.pending) && meta.pending.length) {
-    console.log(`${label} — en attente : ${meta.pending.map((item) => `${item.week}/${item.phase}:${item.reason}`).join(', ')}`);
-  }
-  await deliverQueue(client, queue, { markets: true, notices: true });
-  const pending = (queue.markets || []).length;
-  const dossierNotices = (queue.notices || []).length;
-  console.log(`${label} — ${pending} relevé(s) global(aux), ${dossierNotices} avis dossier(s)`);
-  return pending;
+  return withJobLock('market', async () => {
+    const queue = await api('GET', undefined, '?job=market');
+    const meta = queue.markets_meta || {};
+    console.log(
+      `${label} — next=${meta.next || '—'} channel=${meta.channel === false ? 'non' : 'oui'}`
+      + (Array.isArray(meta.pending) && meta.pending.length
+        ? ` · en attente : ${meta.pending.map((item) => `${item.week}/${item.phase}:${item.reason}`).join(', ')}`
+        : '')
+      + (Array.isArray(meta.weeks) && meta.weeks.length
+        ? ` · séances : ${meta.weeks.map((item) => `${item.week} applied=${item.applied} dossiers=${item.dossier_notices_sent} posted=${item.posted_id || 'non'}`).join(' | ')}`
+        : '')
+    );
+    if (meta.channel === false) {
+      console.error(`${label} — ni DISCORD_FUNDS_CHANNEL_ID ni DISCORD_FUNDS_FORUM_ID côté API`);
+    }
+    await deliverQueue(client, queue, { markets: true, notices: true });
+    const pending = (queue.markets || []).length;
+    const dossierNotices = (queue.notices || []).length;
+    console.log(`${label} — ${pending} relevé(s) global(aux), ${dossierNotices} avis dossier(s)`);
+    return pending;
+  });
 }
 
 async function runMarket(client) {
-  await withJobLock('market', async () => {
-    console.log(`[${parisParts().date} 18:00 Paris] Job market — tirage + message d’attente`);
-    await flushMarkets(client, 'Market draft');
-  });
+  console.log(`[${parisParts().date} 18:00 Paris] Job market — tirage + message d’attente`);
+  await flushMarkets(client, 'Market draft');
 }
 
 async function runScan(client) {
@@ -505,14 +511,13 @@ function armSchedule(client) {
       markSlot(parts, SLOT_MARKET);
       runMarket(client).catch((error) => console.error('Market', error.message || error));
     }
-    // Relances : brouillon 18–19 h, édition résultats 19–20 h.
-    if (parts.hour >= 18 && parts.hour < 20 && parts.minute % 5 === 0) {
+    // Relances : brouillon dès 18 h, application dossiers + Discord dès 19 h (y compris après 20 h).
+    if (parts.hour >= 18 && parts.minute % 5 === 0) {
       const retryKey = `market_retry_${parts.date}_${parts.hour}_${parts.minute}`;
       if (ran.market_retry !== retryKey) {
         ran.market_retry = retryKey;
-        withJobLock('market', async () => {
-          await flushMarkets(client, parts.hour >= 19 ? 'Market publish retry' : 'Market draft retry');
-        }).catch((error) => console.error('Market retry', error.message || error));
+        flushMarkets(client, parts.hour >= 19 ? 'Market publish retry' : 'Market draft retry')
+          .catch((error) => console.error('Market retry', error.message || error));
       }
     }
     if (slotDue(parts, SLOT_SCAN)) {
@@ -524,7 +529,6 @@ function armSchedule(client) {
   const realtime = () => runRealtime(client).catch((error) => console.error('Realtime', error.message || error));
 
   realtime();
-  pulse();
   setInterval(realtime, REALTIME_EVERY_MS);
   setInterval(pulse, CLOCK_EVERY_MS);
 }
@@ -533,11 +537,25 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 client.once('clientReady', () => {
   console.log(`Banque Fédérale connectée en tant que ${client.user.tag}`);
   console.log(`API registre : ${apiBase}`);
+  const parts = parisParts();
+  const nowMins = parts.hour * 60 + parts.minute;
+  // Au redémarrage : ne pas rejouer daily / market (le flush ci-dessous rattrape Discord).
+  // Le créneau scan reste libre pour enchaîner publish + lecture forum une seule fois.
+  if (nowMins >= SLOT_DAILY.hour * 60 + SLOT_DAILY.minute) markSlot(parts, SLOT_DAILY);
+  if (nowMins >= SLOT_MARKET.hour * 60 + SLOT_MARKET.minute) markSlot(parts, SLOT_MARKET);
   armSchedule(client);
-  // Au démarrage : tenter tout de suite le flush des séances (brouillon 18 h / résultats 19 h).
-  withJobLock('market', async () => {
-    await flushMarkets(client, 'Market startup');
-  }).catch((error) => console.error('Market startup', error.message || error));
+
+  const boot = async () => {
+    if (nowMins >= SLOT_SCAN.hour * 60 + SLOT_SCAN.minute) {
+      markSlot(parts, SLOT_SCAN);
+      await runScan(client);
+      return;
+    }
+    if (nowMins >= SLOT_MARKET.hour * 60 + SLOT_MARKET.minute) {
+      await flushMarkets(client, 'Market startup');
+    }
+  };
+  boot().catch((error) => console.error('Market startup', error.message || error));
 });
 
 if (!process.env.DISCORD_BOT_TOKEN) {
