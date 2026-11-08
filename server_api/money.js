@@ -20,11 +20,37 @@ function dateFr(iso) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 }
 
-// Séance des fonds : la clé « on » est le dimanche civil du tirage.
-// On garde le même jour/mois en calendrier RP (ex. 08/11/2026 → 08/11/1904),
-// sans reculer au dimanche RP — ce décalage affichait 06/11 au lieu de 08/11.
+function civilIso(value) {
+  const match = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return '';
+  const year = Number(match[1]);
+  if (year >= 2000) return `${year}-${match[2]}-${match[3]}`;
+  return `${RP_ORIGIN + (year - RP_YEAR)}-${match[2]}-${match[3]}`;
+}
+
+// Ancien bug : dimanche civil (ex. 08/11/2026) → année RP (08/11/1904 = mardi) →
+// recul au dimanche RP (06/11/1904). On restaure le jour/mois civil (+2 j.).
+function unsnapMarketOn(iso) {
+  const match = String(iso || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return String(iso || '').slice(0, 10);
+  const year = Number(match[1]);
+  const date = new Date(Date.UTC(year, Number(match[2]) - 1, Number(match[3]), 12));
+  if (Number.isNaN(date.getTime())) return match[0];
+  const weekday = date.getUTCDay();
+  if (year < 2000 && weekday === 0) date.setUTCDate(date.getUTCDate() + 2);
+  else if (year >= 2000 && weekday === 5) date.setUTCDate(date.getUTCDate() + 2);
+  else return match[0];
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+// Séance des fonds : clé « on » = dimanche civil. Affichage = même jour/mois en RP.
 function marketDateFr(iso) {
-  return dateFr(iso);
+  return dateFr(unsnapMarketOn(iso));
+}
+
+function marketOnKey(iso) {
+  const fixed = unsnapMarketOn(iso);
+  return civilIso(fixed) || fixed;
 }
 
 function addDays(iso, days) {
@@ -407,7 +433,7 @@ function fundWithdrawalQuote(row, gross) {
 }
 
 module.exports = {
-  money, moneyFr, dateFr, marketDateFr, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
+  money, moneyFr, dateFr, marketDateFr, marketOnKey, unsnapMarketOn, civilIso, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
   TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
   stateOf, stateLabel, discordUrlOk, TEXAS,
   lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, civilToday, completedWeeks, growLifeDeposit,

@@ -17,21 +17,18 @@ loadEnv();
 const apiBase = process.env.BANK_API_URL || 'http://127.0.0.1:3000';
 const key = process.env.DISCORD_AGENDA_API_KEY || '';
 const forumId = process.env.DISCORD_MISSION_FORUM_ID || '';
-const fundsForumId = process.env.DISCORD_FUNDS_FORUM_ID || '';
-const FUNDS_FORUM_NAME = '💰・fonds-spéculatifs';
-const SCAN_CHUNK = 25;
 
 /** Horaires Europe/Paris : daily 16h, tirage fonds 18h, édition Discord + comptes 19h.
- *  Les actions au clic (souscriptions / avis) restent en poll fréquent. */
+ *  Les actions au clic (souscriptions / avis) restent en poll fréquent.
+ *  Plus de lecture / ajout auto depuis le forum des fonds. */
 const SLOT_DAILY = { hour: 16, minute: 0, key: 'daily' };
 const SLOT_MARKET = { hour: 18, minute: 0, key: 'market' };
-const SLOT_SCAN = { hour: 19, minute: 0, key: 'scan' };
+const SLOT_PUBLISH = { hour: 19, minute: 0, key: 'publish' };
 const CLOCK_EVERY_MS = 30 * 1000;
 const REALTIME_EVERY_MS = 60 * 1000;
 
-let scanning = false;
-const ran = { daily: '', market: '', scan: '' };
-const jobBusy = { realtime: false, daily: false, market: false, scan: false };
+const ran = { daily: '', market: '', publish: '' };
+const jobBusy = { realtime: false, daily: false, market: false, publish: false };
 const inFlight = new Set();
 
 async function withJobLock(name, fn) {
@@ -308,94 +305,6 @@ async function postInterest(client, item) {
   });
 }
 
-async function syncApi(method, body) {
-  const response = await fetch(`${apiBase}/api/fonds_forum_sync`, {
-    method,
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Registre ${response.status}`);
-  return data;
-}
-
-async function findFundsForum(client) {
-  if (fundsForumId) return client.channels.fetch(fundsForumId);
-  const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-  const channels = await guild.channels.fetch();
-  return channels.find((channel) => channel && channel.type === ChannelType.GuildForum && channel.name === FUNDS_FORUM_NAME) || null;
-}
-
-async function allThreads(forum) {
-  const found = new Map();
-  const active = await forum.threads.fetchActive();
-  active.threads.forEach((thread) => found.set(thread.id, thread));
-  let before;
-  for (let page = 0; page < 20; page += 1) {
-    const archived = await forum.threads.fetchArchived({ limit: 100, before });
-    archived.threads.forEach((thread) => found.set(thread.id, thread));
-    if (!archived.hasMore || !archived.threads.size) break;
-    before = archived.threads.last();
-  }
-  return [...found.values()];
-}
-
-async function readThread(forum, thread) {
-  const tagNames = new Map((forum.availableTags || []).map((tag) => [tag.id, tag.name]));
-  const messages = [];
-  let before;
-  for (let page = 0; page < 10; page += 1) {
-    const batch = await thread.messages.fetch({ limit: 100, before });
-    if (!batch.size) break;
-    batch.forEach((message) => {
-      const embeds = message.embeds.map((embed) => {
-        const raw = embed.toJSON();
-        return {
-          title: raw.title || '',
-          description: raw.description || '',
-          fields: raw.fields || [],
-          footer: raw.footer || null,
-          timestamp: raw.timestamp || null,
-          author: raw.author ? { name: raw.author.name || '' } : null
-        };
-      });
-      if (embeds.length) messages.push({ id: message.id, embeds });
-    });
-    before = batch.last().id;
-    if (batch.size < 100) break;
-  }
-  return {
-    id: thread.id,
-    name: thread.name,
-    url: `https://discord.com/channels/${thread.guildId}/${thread.id}`,
-    tags: (thread.appliedTags || []).map((id) => tagNames.get(id)).filter(Boolean),
-    messages
-  };
-}
-
-async function scanFunds(client) {
-  if (scanning) return;
-  scanning = true;
-  try {
-    const forum = await findFundsForum(client);
-    if (!forum || forum.type !== ChannelType.GuildForum) throw new Error(`Forum « ${FUNDS_FORUM_NAME} » introuvable.`);
-    const threads = await allThreads(forum);
-    let created = 0;
-    for (let index = 0; index < threads.length || index === 0; index += SCAN_CHUNK) {
-      const chunk = [];
-      for (const thread of threads.slice(index, index + SCAN_CHUNK)) {
-        try { chunk.push(await readThread(forum, thread)); } catch (error) { console.error('Lecture du fil', thread.id, error.message); }
-      }
-      const last = index + SCAN_CHUNK >= threads.length;
-      const result = await syncApi('POST', { threads: chunk, last });
-      created += result.created || 0;
-    }
-    console.log(`Forum des fonds relu : ${threads.length} fil(s), ${created} nouvel(s) écart(s).`);
-  } finally {
-    scanning = false;
-  }
-}
-
 async function deliverQueue(client, queue, { publications = false, notices = false, missions = false, interest = false, markets = false } = {}) {
   if (publications) {
     for (const item of queue.publications || []) {
@@ -481,16 +390,10 @@ async function runMarket(client) {
   await flushMarkets(client, 'Market draft');
 }
 
-async function runScan(client) {
-  await withJobLock('scan', async () => {
-    console.log(`[${parisParts().date} 19:00 Paris] Édition Discord fonds + actualisation forum`);
-    // 19 h : application comptes + édition du message de résultats (1 h après le tirage).
-    try {
-      await flushMarkets(client, 'Market publish');
-    } catch (error) {
-      console.error('Market publish', error.message || error);
-    }
-    await scanFunds(client);
+async function runPublish(client) {
+  await withJobLock('publish', async () => {
+    console.log(`[${parisParts().date} 19:00 Paris] Édition Discord fonds + application dossiers`);
+    await flushMarkets(client, 'Market publish');
   });
 }
 
@@ -499,7 +402,7 @@ function armSchedule(client) {
   console.log('  · poll ~1 min — souscriptions + avis au clic');
   console.log(`  · 16:00 daily (prochain créneau ${nextSlotLabel(SLOT_DAILY)})`);
   console.log(`  · 18:00 tirage fonds + message d’attente (prochain créneau ${nextSlotLabel(SLOT_MARKET)})`);
-  console.log(`  · 19:00 édition Discord résultats + scan forum (prochain créneau ${nextSlotLabel(SLOT_SCAN)})`);
+  console.log(`  · 19:00 édition Discord résultats (prochain créneau ${nextSlotLabel(SLOT_PUBLISH)})`);
 
   const pulse = () => {
     const parts = parisParts();
@@ -520,9 +423,9 @@ function armSchedule(client) {
           .catch((error) => console.error('Market retry', error.message || error));
       }
     }
-    if (slotDue(parts, SLOT_SCAN)) {
-      markSlot(parts, SLOT_SCAN);
-      runScan(client).catch((error) => console.error('Scan fonds', error.message || error));
+    if (slotDue(parts, SLOT_PUBLISH)) {
+      markSlot(parts, SLOT_PUBLISH);
+      runPublish(client).catch((error) => console.error('Publish fonds', error.message || error));
     }
   };
 
@@ -540,15 +443,14 @@ client.once('clientReady', () => {
   const parts = parisParts();
   const nowMins = parts.hour * 60 + parts.minute;
   // Au redémarrage : ne pas rejouer daily / market (le flush ci-dessous rattrape Discord).
-  // Le créneau scan reste libre pour enchaîner publish + lecture forum une seule fois.
   if (nowMins >= SLOT_DAILY.hour * 60 + SLOT_DAILY.minute) markSlot(parts, SLOT_DAILY);
   if (nowMins >= SLOT_MARKET.hour * 60 + SLOT_MARKET.minute) markSlot(parts, SLOT_MARKET);
   armSchedule(client);
 
   const boot = async () => {
-    if (nowMins >= SLOT_SCAN.hour * 60 + SLOT_SCAN.minute) {
-      markSlot(parts, SLOT_SCAN);
-      await runScan(client);
+    if (nowMins >= SLOT_PUBLISH.hour * 60 + SLOT_PUBLISH.minute) {
+      markSlot(parts, SLOT_PUBLISH);
+      await runPublish(client);
       return;
     }
     if (nowMins >= SLOT_MARKET.hour * 60 + SLOT_MARKET.minute) {

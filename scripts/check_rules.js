@@ -517,6 +517,25 @@ const fundCatchStatement = catchUpFund({
 assert.strictEqual(fundCatchStatement.error, undefined);
 assert.strictEqual(fundCatchStatement.row.statements.length, 1);
 assert.strictEqual(fundCatchStatement.row.capital_balance, 950);
+const fundCatchDupDeposit = catchUpFund({
+  ...fundCatchBase,
+  deposits: [{ on: '1904-10-03', amount: 500, capital_before: 1000, capital_after: 1500 }]
+}, { kind: 'deposit', on: '1904-10-03', amount: 500 });
+assert.ok(fundCatchDupDeposit.error);
+const fundCatchDupStatement = catchUpFund(fundCatchBase, { kind: 'statement', on: '1904-10-05', result_percent: 10 });
+assert.ok(fundCatchDupStatement.error);
+const fundMoveDup = require('../server_api/products').PRODUCTS.speculative_funds.move(
+  {
+    status: 'ouvert',
+    capital_balance: 1500,
+    cost_basis: 1500,
+    withdrawn_total: 0,
+    deposits: [{ on: money.rpToday(), amount: 100, capital_before: 1400, capital_after: 1500 }],
+    withdrawals: []
+  },
+  { action: 'deposit', amount: 100 }
+);
+assert.ok(fundMoveDup.error);
 const fundCatchNotice = actions.serviceNotice('speculative_funds', 'catch_up', {
   full_name: 'Ada Lovelace', dossier_number: 'FS-000001', capital_balance: 1650,
   catch_up: { kind: 'deposit', on: '1904-10-03', amount: 500 }
@@ -820,6 +839,10 @@ assert.ok(board.footer.text.includes('perte partielle ou totale'));
 assert.ok(board.footer.text.includes('01/11/1904 19:00'));
 assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-01'), '01/11/1904');
 assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-08'), '08/11/1904');
+assert.strictEqual(require('../server_api/money').marketDateFr('1904-11-06'), '08/11/1904');
+assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-06'), '08/11/1904');
+assert.strictEqual(require('../server_api/money').marketOnKey('1904-11-06'), '2026-11-08');
+assert.strictEqual(require('../server_api/money').marketOnKey('2026-11-08'), '2026-11-08');
 const split = market.marketEmbed({
   on: '2026-11-01',
   results: { I: { final: 1 }, II: { final: -1 }, III: { final: 0 } },

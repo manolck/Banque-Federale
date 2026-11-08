@@ -13,13 +13,33 @@ function bfRpIso(value) {
   const used = year >= 2000 ? 1904 + (year - 2026) : iso[1];
   return `${used}-${iso[2]}-${iso[3]}`;
 }
+function bfCivilIso(value) {
+  const iso = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return '';
+  const year = Number(iso[1]);
+  if (year >= 2000) return `${year}-${iso[2]}-${iso[3]}`;
+  return `${2026 + (year - 1904)}-${iso[2]}-${iso[3]}`;
+}
 function bfDate(value) {
   const iso = bfRpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || '');
 }
+function bfUnsnapMarketOn(value) {
+  const iso = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!iso) return String(value || '').slice(0, 10);
+  const year = Number(iso[1]);
+  const date = new Date(Date.UTC(year, Number(iso[2]) - 1, Number(iso[3]), 12));
+  if (Number.isNaN(date.getTime())) return iso[0];
+  const weekday = date.getUTCDay();
+  // Ancien bug : dimanche civil → année RP → recul au dimanche RP (−2 j.).
+  if (year < 2000 && weekday === 0) date.setUTCDate(date.getUTCDate() + 2);
+  else if (year >= 2000 && weekday === 5) date.setUTCDate(date.getUTCDate() + 2);
+  else return iso[0];
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
 function bfMarketDate(value) {
-  // Même jour/mois que la séance civile, année RP (pas de recul au dimanche 1904).
-  return bfDate(value);
+  // Même jour/mois que la séance civile, année RP (corrige l’ancien recul de 2 jours).
+  return bfDate(bfUnsnapMarketOn(value));
 }
 function bfAddDays(iso, days) {
   const date = new Date(`${String(iso || '').slice(0, 10)}T12:00:00Z`);
@@ -95,7 +115,7 @@ function fundLines(statements, deposits, withdrawals) {
     .concat((Array.isArray(deposits) ? deposits : []).map((item, sourceIndex) => ({ ...item, kind: 'deposit', sourceIndex })))
     .concat(taken.map((item, sourceIndex) => ({ ...item, kind: 'withdrawal', sourceIndex })))
     .sort((left, right) => {
-      const byDate = bfRpIso(left.on || '').localeCompare(bfRpIso(right.on || ''));
+      const byDate = bfCivilIso(left.on || '').localeCompare(bfCivilIso(right.on || ''));
       if (byDate) return byDate;
       return fundLineRank(left.kind) - fundLineRank(right.kind);
     });
@@ -187,12 +207,12 @@ function bfFundOpening(row) {
   const depositSum = deposits.reduce((sum, item) => sum + bfMoney(item && item.amount), 0);
   const candidate = bfMoney(amount - depositSum);
   if (!(candidate > 0) || candidate === amount) return amount;
-  const byOn = (left, right) => bfRpIso(left && left.on).localeCompare(bfRpIso(right && right.on));
+  const byOn = (left, right) => bfCivilIso(left && left.on).localeCompare(bfCivilIso(right && right.on));
   const firstDeposit = deposits.slice().filter((item) => item && item.on).sort(byOn)[0];
   const firstStatement = (Array.isArray(row && row.statements) ? row.statements : []).slice().filter((item) => item && item.on).sort(byOn)[0];
   if (firstStatement && bfMoney(firstStatement.capital_before) === candidate) return candidate;
   if (firstDeposit && bfMoney(firstDeposit.capital_before) === candidate) {
-    if (!firstStatement || bfRpIso(firstDeposit.on) <= bfRpIso(firstStatement.on)) return candidate;
+    if (!firstStatement || bfCivilIso(firstDeposit.on) <= bfCivilIso(firstStatement.on)) return candidate;
   }
   return amount;
 }
@@ -209,7 +229,7 @@ function bfFundReplayLines(row) {
     .concat(withdrawals.map((item, sourceIndex) => ({ kind: 'withdrawal', sourceIndex, item })))
     .filter((event) => event.item && event.item.on)
     .sort((left, right) => {
-      const byDate = bfRpIso(left.item.on).localeCompare(bfRpIso(right.item.on));
+      const byDate = bfCivilIso(left.item.on).localeCompare(bfCivilIso(right.item.on));
       if (byDate) return byDate;
       return fundLineRank(left.kind) - fundLineRank(right.kind);
     });

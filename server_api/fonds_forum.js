@@ -348,6 +348,11 @@ function applyProposal(fund, proposal) {
     const mov = proposal.movement || {};
     if (!(Number(mov.amount) > 0)) return { error: 'Versement incomplet.' };
     const amount = money(mov.amount);
+    const on = String(mov.on || '').slice(0, 10);
+    const knownDeposits = Array.isArray(fund.deposits) ? fund.deposits : [];
+    if (on && knownDeposits.some((item) => item && String(item.on || '').slice(0, 10) === on && same(item.amount, amount))) {
+      return { error: 'Ce dépôt existe déjà dans le dossier.' };
+    }
     const current = fundCapital(fund);
     const discordBefore = mov.capital_before == null ? null : money(mov.capital_before);
     const discordAfter = mov.capital_after == null ? null : money(mov.capital_after);
@@ -384,6 +389,12 @@ function applyProposal(fund, proposal) {
   if (proposal.kind === 'add_withdrawal') {
     const mov = proposal.movement || {};
     if (!(Number(mov.amount) > 0)) return { error: 'Retrait incomplet.' };
+    const on = String(mov.on || '').slice(0, 10);
+    const amount = money(mov.amount);
+    const knownWdr = fundWithdrawals(fund);
+    if (on && knownWdr.some((item) => item && String(item.on || '').slice(0, 10) === on && same(item.amount, amount))) {
+      return { error: 'Ce retrait existe déjà dans le dossier.' };
+    }
     const quoted = fundWithdrawalQuote(fund, mov.amount);
     if (quoted.error) return { error: quoted.error };
     const entry = {
@@ -440,7 +451,7 @@ function applyProposal(fund, proposal) {
     if (index < 0) return { error: 'Le relevé du dossier a changé depuis la lecture du forum. Relis le forum.' };
     list[index] = { ...list[index], ...line };
   } else if (proposal.kind === 'add_statement') {
-    if (list.some((x) => x && x.on === line.on && same(x.capital_after, line.capital_after))) {
+    if (list.some((x) => x && x.on === line.on && (x.market || same(x.capital_after, line.capital_after)))) {
       return { error: 'Ce relevé existe déjà dans le dossier.' };
     }
     list.push(line);

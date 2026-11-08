@@ -1,13 +1,12 @@
 const { timingSafeEqual } = require('node:crypto');
-const { sb, json, readBody, currentUser, hasPermission, logAction, handler } = require('./_lib');
+const { sb, json, readBody, currentUser, hasPermission, handler } = require('./_lib');
 const { discordUrlOk } = require('./money');
-const { parseThread, diffFund, proposalSignature, applyProposal } = require('./fonds_forum');
 
 const FUNDS = 'pret_speculative_funds';
 const PROPOSALS = 'pret_fund_sync';
 const SCAN_KEY = 'fonds_forum_last_scan';
 const REQUEST_KEY = 'fonds_forum_scan_requested';
-const MAX_THREADS = 60;
+const DISABLED = { error: 'La synchro forum des fonds spéculatifs est désactivée.' };
 
 /** Relie le fil Discord existant au dossier (avis / versements). */
 async function linkFundThread(fund, threadUrl) {
@@ -50,179 +49,51 @@ function botAuthorized(req) {
   return wanted.length > 0 && given.length === wanted.length && timingSafeEqual(given, wanted);
 }
 
-async function setting(key, value) {
-  const saved = await sb.from('pret_bank_settings').upsert({ setting_key: key, setting_value: value }, { onConflict: 'setting_key' });
-  if (saved.error) throw new Error(saved.error.message);
-}
 async function readSetting(key) {
   const { data, error } = await sb.from('pret_bank_settings').select('*').eq('setting_key', key).maybeSingle();
   if (error) throw new Error(error.message);
   return data ? data.setting_value : '';
 }
 
-async function autoApplyMovement(fund, item, threadUrl) {
-  if (!fund || !item || (item.kind !== 'add_deposit' && item.kind !== 'add_withdrawal')) return null;
-  const built = applyProposal(fund, item);
-  if (built.error) return { error: built.error };
-  const patch = { ...built.patch };
-  if (!discordUrlOk(fund.discord_url) && discordUrlOk(threadUrl)) {
-    patch.discord_url = String(threadUrl).trim();
-    patch.discord_posted_at = fund.discord_posted_at || new Date().toISOString();
-  }
-  const updated = await sb.from(FUNDS).update(patch).eq('id', fund.id);
-  if (updated.error) throw new Error(updated.error.message);
-  Object.assign(fund, patch);
-  if (item.kind === 'add_withdrawal' && patch.withdrawal) {
-    try {
-      const { recordWithdrawal } = require('./fund_payouts');
-      await recordWithdrawal(fund, patch.withdrawal, { username: fund.created_by_username || 'discord-sync' });
-    } catch (error) {
-      console.error('Remboursement fonds (forum)', error.message || error);
-    }
-  }
-  return patch;
-}
-
-// Réception d'un lot de fils lus par le bot : propositions + liaison discord_url manquante.
-// Les dépôts / retraits Discord sont appliqués tout de suite (capital + cost_basis).
-async function scan(body) {
-  const threads = Array.isArray(body.threads) ? body.threads.slice(0, MAX_THREADS) : [];
-  const funds = await sb.from(FUNDS).select('*');
-  if (funds.error) throw new Error(funds.error.message);
-  const byNumber = new Map((funds.data || []).map((fund) => [String(fund.dossier_number), fund]));
-  const existing = await sb.from(PROPOSALS).select('*');
-  if (existing.error) throw new Error(existing.error.message);
-  const rows = existing.data || [];
-  const known = new Map(rows.map((row) => [row.sig, row]));
-  const stats = { threads: threads.length, ignored: 0, created: 0, resolved: 0, pending: 0, linked: 0, applied: 0 };
-
-  for (const thread of threads) {
-    const parsed = parseThread(thread);
-    if (!parsed.dossier_number) { stats.ignored += 1; continue; }
-    const fund = byNumber.get(parsed.dossier_number);
-    const wanted = [];
-    if (!fund) {
-      wanted.push({ sig: `unknown|${parsed.dossier_number}|${parsed.thread_id}`, fund_id: '', kind: 'unknown_dossier', payload: { name: parsed.name } });
-    } else {
-      if (await linkFundThread(fund, parsed.thread_url)) stats.linked += 1;
-      let proposals = diffFund(fund, parsed).proposals;
-      const movements = proposals.filter((item) => item.kind === 'add_deposit' || item.kind === 'add_withdrawal');
-      let moved = false;
-      for (const item of movements) {
-        const applied = await autoApplyMovement(fund, item, parsed.thread_url);
-        if (applied && !applied.error) {
-          moved = true;
-          stats.applied += 1;
-          await logAction(
-            { id: 'bot', username: 'discord-sync', role: 'bot' },
-            'synchro_forum_fonds_auto',
-            { dossier: parsed.dossier_number, kind: item.kind, amount: item.movement && item.movement.amount }
-          );
-        } else {
-          wanted.push({ sig: proposalSignature(fund, item), fund_id: String(fund.id), kind: item.kind, payload: item });
-        }
-      }
-      if (moved) proposals = diffFund(fund, parsed).proposals;
-      for (const item of proposals) {
-        if (item.kind === 'add_deposit' || item.kind === 'add_withdrawal') continue;
-        wanted.push({ sig: proposalSignature(fund, item), fund_id: String(fund.id), kind: item.kind, payload: item });
-      }
-    }
-    const sigs = new Set(wanted.map((item) => item.sig));
-    for (const item of wanted) {
-      if (known.has(item.sig)) continue;
-      const inserted = await sb.from(PROPOSALS).insert({
-        sig: item.sig, fund_id: item.fund_id, dossier_number: parsed.dossier_number,
-        full_name: fund ? fund.full_name : '', kind: item.kind, payload: item.payload,
-        thread_url: parsed.thread_url, thread_name: parsed.name, status: 'pending'
-      }).select().single();
-      if (inserted.error) throw new Error(inserted.error.message);
-      known.set(item.sig, inserted.data);
-      stats.created += 1;
-    }
-    // Une proposition en attente qui n'est plus un écart (forum ou dossier corrigé) disparaît d'elle-même.
-    for (const row of rows) {
-      if (row.dossier_number !== parsed.dossier_number || row.status !== 'pending' || sigs.has(row.sig)) continue;
-      const removed = await sb.from(PROPOSALS).delete().eq('id', row.id);
-      if (removed.error) throw new Error(removed.error.message);
-      known.delete(row.sig);
-      stats.resolved += 1;
-    }
-  }
-  stats.pending = [...known.values()].filter((row) => row.status === 'pending').length;
-  if (body.last) {
-    await setting(SCAN_KEY, new Date().toISOString());
-    await setting(REQUEST_KEY, '');
-  }
-  return stats;
-}
-
-async function applyOne(actor, id) {
-  const found = await sb.from(PROPOSALS).select('*').eq('id', id).maybeSingle();
-  if (found.error) return { status: 500, error: found.error.message };
-  const proposal = found.data;
-  if (!proposal) return { status: 404, error: 'Proposition introuvable.' };
-  if (proposal.status !== 'pending') return { status: 409, error: 'Cette proposition est déjà traitée.' };
-  if (proposal.kind === 'unknown_dossier') return { status: 400, error: 'Dossier introuvable dans le registre : rien à appliquer.' };
-  const fund = await sb.from(FUNDS).select('*').eq('id', proposal.fund_id).maybeSingle();
-  if (fund.error) return { status: 500, error: fund.error.message };
-  if (!fund.data) return { status: 404, error: 'Dossier introuvable.' };
-  const built = applyProposal(fund.data, proposal.payload || {});
-  if (built.error) return { status: 409, error: built.error };
-  const patch = { ...built.patch };
-  if (!discordUrlOk(fund.data.discord_url) && discordUrlOk(proposal.thread_url)) {
-    patch.discord_url = String(proposal.thread_url).trim();
-    patch.discord_posted_at = fund.data.discord_posted_at || new Date().toISOString();
-  }
-  const updated = await sb.from(FUNDS).update(patch).eq('id', fund.data.id);
-  if (updated.error) return { status: 500, error: updated.error.message };
-  if (proposal.kind === 'add_withdrawal' && built.patch.withdrawal) {
-    try {
-      const { recordWithdrawal } = require('./fund_payouts');
-      await recordWithdrawal({ ...fund.data, ...built.patch }, built.patch.withdrawal, actor);
-    } catch (error) {
-      console.error('Remboursement fonds (synchro)', error.message || error);
-    }
-  }
-  const closed = await sb.from(PROPOSALS).update({ status: 'applied', resolved_by_username: actor.username, resolved_at: new Date().toISOString() }).eq('id', proposal.id);
-  if (closed.error) return { status: 500, error: closed.error.message };
-  await logAction(actor, 'synchro_forum_fonds', { dossier: proposal.dossier_number, kind: proposal.kind, patch: built.patch.status || { capital_balance: built.patch.capital_balance } });
-  return { status: 200 };
-}
-
 async function route(req, res) {
   return handler(req, res, async () => {
+    // Lecture forum / ajout auto : désactivés (les dossiers se mettent à jour via UI + tirage marché).
     if (botAuthorized(req)) {
-      if (req.method === 'GET') return json(res, 200, { requested: !!(await readSetting(REQUEST_KEY)), last_scan: await readSetting(SCAN_KEY) || null });
-      if (req.method === 'POST') return json(res, 200, await scan(await readBody(req)));
+      if (req.method === 'GET') {
+        return json(res, 200, {
+          requested: false,
+          last_scan: await readSetting(SCAN_KEY) || null,
+          disabled: true
+        });
+      }
+      if (req.method === 'POST') {
+        return json(res, 200, {
+          threads: 0,
+          ignored: 0,
+          created: 0,
+          resolved: 0,
+          pending: 0,
+          linked: 0,
+          applied: 0,
+          disabled: true
+        });
+      }
       return json(res, 405, { error: 'Méthode non autorisée' });
     }
     const actor = await currentUser(req);
     if (!actor) return json(res, 401, { error: 'Non connecté' });
     if (req.method === 'GET') {
       if (!hasPermission(actor, 'bank.read')) return json(res, 403, { error: 'Accès refusé' });
-      const { data, error } = await sb.from(PROPOSALS).select('*').eq('status', 'pending').order('created_at', { ascending: true });
-      if (error) return json(res, 500, { error: error.message });
-      return json(res, 200, { proposals: data || [], last_scan: await readSetting(SCAN_KEY) || null, requested: !!(await readSetting(REQUEST_KEY)) });
+      return json(res, 200, {
+        proposals: [],
+        last_scan: await readSetting(SCAN_KEY) || null,
+        requested: !!(await readSetting(REQUEST_KEY)),
+        disabled: true
+      });
     }
     if (req.method !== 'PUT') return json(res, 405, { error: 'Méthode non autorisée' });
     if (!hasPermission(actor, 'bank.write')) return json(res, 403, { error: 'Modification refusée' });
-    const body = await readBody(req);
-    if (body.action === 'request_scan') {
-      await setting(REQUEST_KEY, new Date().toISOString());
-      return json(res, 200, { ok: true });
-    }
-    if (body.action === 'reject') {
-      const closed = await sb.from(PROPOSALS).update({ status: 'rejected', resolved_by_username: actor.username, resolved_at: new Date().toISOString() }).eq('id', body.id);
-      if (closed.error) return json(res, 500, { error: closed.error.message });
-      await logAction(actor, 'synchro_forum_fonds_refus', { id: body.id });
-      return json(res, 200, { ok: true });
-    }
-    if (body.action === 'apply') {
-      const done = await applyOne(actor, body.id);
-      return json(res, done.status, done.error ? { error: done.error } : { ok: true });
-    }
-    return json(res, 400, { error: 'Action inconnue.' });
+    return json(res, 410, DISABLED);
   });
 }
 

@@ -4,7 +4,7 @@ const {
   quotePawn, quoteConsigne, quoteTerm, quotePayroll, quoteGoldstein,
   rpStamp, nextSerial, nextTermDossier, money
 } = require('./discord_forms');
-const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, fundOpening, fundContributedFields, termPayout, datedLike, rpToday, addDays, asRpDay, rpIso } = require('./money');
+const { goldsteinNext, fundDepositQuote, fundWithdrawalQuote, fundOpening, fundContributedFields, termPayout, datedLike, rpToday, addDays, asRpDay, rpIso, civilIso, marketOnKey } = require('./money');
 const { safeId } = require('./ids');
 
 function agencyOf(value) {
@@ -253,19 +253,36 @@ function fundHistory(row) {
   return row.withdrawal ? [row.withdrawal] : [];
 }
 
+function fundEntryOn(item) {
+  return item && item.on ? (rpIso(item.on) || String(item.on).slice(0, 10)) : '';
+}
+
+function sameFundAmount(left, right) {
+  return money(left) === money(right);
+}
+
+function hasDuplicateFundMove(list, on, amount) {
+  const day = rpIso(on) || String(on || '').slice(0, 10);
+  return (list || []).some((item) => item && fundEntryOn(item) === day && sameFundAmount(item.amount, amount));
+}
+
 function moveFund(row, body) {
   if (row.status === 'clos' || row.status === 'paye') return fail('Ce dossier est clôturé.');
   const on = localToday();
   if (body.action === 'deposit') {
     const quoted = fundDepositQuote(row, body.amount);
     if (quoted.error) return fail(quoted.error);
-    const deposits = (Array.isArray(row.deposits) ? row.deposits : []).concat({
+    const deposits = Array.isArray(row.deposits) ? row.deposits : [];
+    if (hasDuplicateFundMove(deposits, on, quoted.amount)) {
+      return fail('Un dépôt du même montant existe déjà à cette date.');
+    }
+    const nextDeposits = deposits.concat({
       on, amount: quoted.amount, capital_before: quoted.capital_before, capital_after: quoted.capital_after
     });
     return {
       row: {
-        deposits,
-        ...fundContributedFields(row, deposits),
+        deposits: nextDeposits,
+        ...fundContributedFields(row, nextDeposits),
         capital_balance: quoted.capital_after,
         cost_basis: quoted.cost_basis,
         withdrawn_total: quoted.withdrawn_total
@@ -275,6 +292,10 @@ function moveFund(row, body) {
   if (body.action === 'withdraw') {
     const quoted = fundWithdrawalQuote(row, body.amount);
     if (quoted.error) return fail(quoted.error);
+    const history = fundHistory(row);
+    if (hasDuplicateFundMove(history, on, quoted.amount)) {
+      return fail('Un retrait du même montant existe déjà à cette date.');
+    }
     const transferToOffer = !!(body.transfer_to_offer || body.transferToOffer);
     const entry = {
       on,
@@ -290,7 +311,7 @@ function moveFund(row, body) {
       withdrawn_total: quoted.withdrawn_total,
       transfer_to_offer: transferToOffer
     };
-    const withdrawals = fundHistory(row).concat(entry);
+    const withdrawals = history.concat(entry);
     const patch = {
       withdrawals,
       withdrawal: entry,
@@ -324,7 +345,8 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
     if (!item || !item.on) continue;
     events.push({
       type: 'statement',
-      on: rpIso(item.on) || String(item.on).slice(0, 10),
+      // Relevés : clé dimanche civile (corrige l’ancien recul RP de 2 jours).
+      on: marketOnKey(item.on) || String(item.on).slice(0, 10),
       result_percent: Number(item.result_percent),
       source: item.source || '',
       raw: item
@@ -342,7 +364,9 @@ function rebuildFundTimeline(row, deposits, withdrawals, statements) {
     });
   }
   events.sort((left, right) => {
-    const byDate = left.on.localeCompare(right.on);
+    const leftOn = civilIso(left.on) || left.on;
+    const rightOn = civilIso(right.on) || right.on;
+    const byDate = leftOn.localeCompare(rightOn);
     if (byDate) return byDate;
     return fundEventRank(left.type) - fundEventRank(right.type);
   });
@@ -478,21 +502,29 @@ function catchUpFund(row, body) {
 
   const rawOn = String(body.on || '').trim().slice(0, 10);
   if (!validDate(rawOn)) return fail('La date est obligatoire.');
-  const on = rpIso(rawOn) || rawOn;
 
   if (kind === 'deposit' || kind === 'ajout' || kind === 'add_deposit') {
+    const on = rpIso(rawOn) || rawOn;
     const amount = money(body.amount);
     if (!(amount > 0)) return fail('Le montant du dépôt est obligatoire.');
+    if (hasDuplicateFundMove(deposits, on, amount)) {
+      return fail('Un dépôt du même montant existe déjà à cette date.');
+    }
     deposits.push({ on, amount, source: 'manual' });
   } else if (kind === 'withdraw' || kind === 'retrait' || kind === 'add_withdrawal') {
+    const on = rpIso(rawOn) || rawOn;
     const amount = money(body.amount);
     if (!(amount > 0)) return fail('Le montant du retrait est obligatoire.');
+    if (hasDuplicateFundMove(withdrawals, on, amount)) {
+      return fail('Un retrait du même montant existe déjà à cette date.');
+    }
     withdrawals.push({ on, amount, source: 'manual' });
   } else if (kind === 'statement' || kind === 'releve' || kind === 'market') {
+    const on = marketOnKey(rawOn) || rawOn;
     const raw = body.result_percent != null ? body.result_percent : body.result;
     const pct = Number(String(raw ?? '').trim().replace(',', '.'));
     if (!Number.isFinite(pct)) return fail('Le résultat de marché est obligatoire.');
-    if (statements.some((item) => item && item.market && (rpIso(item.on) || String(item.on).slice(0, 10)) === on)) {
+    if (statements.some((item) => item && item.market && marketOnKey(item.on) === on)) {
       return fail('Un relevé de marché existe déjà à cette date.');
     }
     statements.push({ on, result_percent: pct, market: true, source: 'manual' });
