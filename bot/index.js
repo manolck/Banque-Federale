@@ -37,11 +37,11 @@ const inFlight = new Set();
 async function withJobLock(name, fn) {
   if (jobBusy[name]) {
     console.log(`Skip ${name} — déjà en cours`);
-    return;
+    return undefined;
   }
   jobBusy[name] = true;
   try {
-    await fn();
+    return await fn();
   } finally {
     jobBusy[name] = false;
   }
@@ -398,18 +398,30 @@ async function runDaily(client) {
   });
 }
 
+async function flushMarkets(client, label = 'Market') {
+  const queue = await api('GET', undefined, '?job=market');
+  await deliverQueue(client, queue, { markets: true });
+  const pending = (queue.markets || []).length;
+  console.log(`${label} — ${pending} relevé(s)`);
+  return pending;
+}
+
 async function runMarket(client) {
   await withJobLock('market', async () => {
     console.log(`[${parisParts().date} 18:00 Paris] Job market — séance fonds spéculatifs`);
-    const queue = await api('GET', undefined, '?job=market');
-    await deliverQueue(client, queue, { markets: true });
-    console.log(`Market OK — ${ (queue.markets || []).length } relevé(s)`);
+    await flushMarkets(client, 'Market OK');
   });
 }
 
 async function runScan(client) {
   await withJobLock('scan', async () => {
     console.log(`[${parisParts().date} 19:00 Paris] Actualisation forum fonds`);
+    // Relance les relevés de séance non publiés si l’envoi de 18 h a échoué.
+    try {
+      await flushMarkets(client, 'Market retry');
+    } catch (error) {
+      console.error('Market retry', error.message || error);
+    }
     await scanFunds(client);
   });
 }
@@ -430,6 +442,16 @@ function armSchedule(client) {
     if (slotDue(parts, SLOT_MARKET)) {
       markSlot(parts, SLOT_MARKET);
       runMarket(client).catch((error) => console.error('Market', error.message || error));
+    }
+    // Entre 18 h et 20 h : nouvel essai des relevés non publiés (toutes les 5 min).
+    if (parts.hour >= 18 && parts.hour < 20 && parts.minute % 5 === 0) {
+      const retryKey = `market_retry_${parts.date}_${parts.hour}_${parts.minute}`;
+      if (ran.market_retry !== retryKey) {
+        ran.market_retry = retryKey;
+        withJobLock('market', async () => {
+          await flushMarkets(client, 'Market retry');
+        }).catch((error) => console.error('Market retry', error.message || error));
+      }
     }
     if (slotDue(parts, SLOT_SCAN)) {
       markSlot(parts, SLOT_SCAN);

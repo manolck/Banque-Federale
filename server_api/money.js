@@ -20,16 +20,11 @@ function dateFr(iso) {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
 }
 
-// Séance des fonds : la clé « on » est un dimanche réel. Après le décalage d'année,
-// le même jour/mois peut tomber un autre jour de semaine. On recule jusqu'au dimanche
-// du calendrier RP pour que la date affichée reste un dimanche.
+// Séance des fonds : la clé « on » est le dimanche civil du tirage.
+// On garde le même jour/mois en calendrier RP (ex. 08/11/2026 → 08/11/1904),
+// sans reculer au dimanche RP — ce décalage affichait 06/11 au lieu de 08/11.
 function marketDateFr(iso) {
-  const match = rpIso(iso).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return dateFr(iso);
-  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
-  if (Number.isNaN(date.getTime())) return dateFr(iso);
-  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
-  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
+  return dateFr(iso);
 }
 
 function addDays(iso, days) {

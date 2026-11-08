@@ -791,9 +791,9 @@ assert.notStrictEqual(board.fields[3].value, board.fields[5].value);
 assert.strictEqual(board.fields[6].name, 'Contexte marché');
 assert.strictEqual(board.fields[6].value, "2 semaines de hausse d'affilée avant ce tirage.");
 assert.ok(board.footer.text.includes('perte partielle ou totale'));
-assert.ok(board.footer.text.includes('30/10/1904 18:00'));
-assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-01'), '30/10/1904');
-assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-08'), '06/11/1904');
+assert.ok(board.footer.text.includes('01/11/1904 18:00'));
+assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-01'), '01/11/1904');
+assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-08'), '08/11/1904');
 const split = market.marketEmbed({
   on: '2026-11-01',
   results: { I: { final: 1 }, II: { final: -1 }, III: { final: 0 } },

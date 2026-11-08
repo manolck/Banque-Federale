@@ -18,12 +18,8 @@ function bfDate(value) {
   return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || '');
 }
 function bfMarketDate(value) {
-  const iso = bfRpIso(value).match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!iso) return bfDate(value);
-  const date = new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]), 12));
-  if (Number.isNaN(date.getTime())) return bfDate(value);
-  date.setUTCDate(date.getUTCDate() - date.getUTCDay());
-  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
+  // Même jour/mois que la séance civile, année RP (pas de recul au dimanche 1904).
+  return bfDate(value);
 }
 function bfAddDays(iso, days) {
   const date = new Date(`${String(iso || '').slice(0, 10)}T12:00:00Z`);
