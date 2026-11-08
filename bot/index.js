@@ -233,23 +233,64 @@ function marketCard(embed) {
   return out;
 }
 
+async function resolveMarketMessage(client, channel, editId) {
+  try {
+    return await channel.messages.fetch(editId);
+  } catch (_) { /* continue */ }
+  const asThread = await client.channels.fetch(editId).catch(() => null);
+  if (asThread && asThread.isThread()) {
+    const starter = await asThread.fetchStarterMessage();
+    if (starter) return starter;
+  }
+  if (channel.threads) {
+    const active = await channel.threads.fetchActive().catch(() => null);
+    const threads = active && active.threads && typeof active.threads.values === 'function'
+      ? [...active.threads.values()]
+      : [];
+    for (const thread of threads) {
+      try {
+        const starter = await thread.fetchStarterMessage();
+        if (starter && starter.id === editId) return starter;
+      } catch (_) { /* continue */ }
+      try {
+        return await thread.messages.fetch(editId);
+      } catch (_) { /* continue */ }
+    }
+  }
+  return null;
+}
+
 async function postMarket(client, item) {
   const channel = await client.channels.fetch(item.channel_id);
   const embed = marketCard(item.embed);
   const payload = embed ? { embeds: [embed] } : { content: 'Haussmann Capital Partners' };
   let message;
+  let ackId;
   const editId = String(item.edit_message_id || '').trim();
   if (editId) {
-    message = await channel.messages.fetch(editId);
+    message = await resolveMarketMessage(client, channel, editId);
+    if (!message) throw new Error(`Message marché ${editId} introuvable pour édition.`);
     await message.edit(payload);
+    ackId = editId;
+  } else if (channel.type === ChannelType.GuildForum) {
+    const label = String(item.week || '').slice(0, 10);
+    const thread = await channel.threads.create({
+      name: `Haussmann Capital Partners · ${label}`.slice(0, 100),
+      message: payload
+    });
+    message = await thread.fetchStarterMessage();
+    if (!message) throw new Error('Fil forum créé sans message initial.');
+    // On mémorise l’id du fil pour pouvoir l’éditer à 19 h.
+    ackId = thread.id;
   } else {
     message = await channel.send(payload);
+    ackId = message.id;
   }
   await api('POST', {
     kind: 'market',
     week: item.week,
     palier: item.palier || item.phase || 'releve',
-    message_id: message.id
+    message_id: ackId || message.id
   });
 }
 
@@ -413,9 +454,17 @@ async function runDaily(client) {
 
 async function flushMarkets(client, label = 'Market') {
   const queue = await api('GET', undefined, '?job=market');
-  await deliverQueue(client, queue, { markets: true });
+  const meta = queue.markets_meta || {};
+  if (meta.channel === false) {
+    console.error(`${label} — ni DISCORD_FUNDS_CHANNEL_ID ni DISCORD_FUNDS_FORUM_ID côté API`);
+  }
+  if (Array.isArray(meta.pending) && meta.pending.length) {
+    console.log(`${label} — en attente : ${meta.pending.map((item) => `${item.week}/${item.phase}:${item.reason}`).join(', ')}`);
+  }
+  await deliverQueue(client, queue, { markets: true, notices: true });
   const pending = (queue.markets || []).length;
-  console.log(`${label} — ${pending} relevé(s)`);
+  const dossierNotices = (queue.notices || []).length;
+  console.log(`${label} — ${pending} relevé(s) global(aux), ${dossierNotices} avis dossier(s)`);
   return pending;
 }
 
@@ -483,7 +532,12 @@ function armSchedule(client) {
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 client.once('clientReady', () => {
   console.log(`Banque Fédérale connectée en tant que ${client.user.tag}`);
+  console.log(`API registre : ${apiBase}`);
   armSchedule(client);
+  // Au démarrage : tenter tout de suite le flush des séances (brouillon 18 h / résultats 19 h).
+  withJobLock('market', async () => {
+    await flushMarkets(client, 'Market startup');
+  }).catch((error) => console.error('Market startup', error.message || error));
 });
 
 if (!process.env.DISCORD_BOT_TOKEN) {

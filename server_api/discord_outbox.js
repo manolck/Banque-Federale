@@ -210,10 +210,24 @@ module.exports = (req, res) => handler(req, res, async () => {
     let markets = [];
 
     if (wantMarket && !wantDaily && !wantRealtime) {
+      let marketsMeta = null;
+      let fundRows = [];
       try {
-        markets = await settleFunds(await rows('pret_speculative_funds'), new Date());
+        fundRows = await rows('pret_speculative_funds');
+        markets = await settleFunds(fundRows, new Date());
+        marketsMeta = markets && markets.meta ? markets.meta : null;
+        if (markets && markets.meta) delete markets.meta;
       } catch (error) {
         console.error('Séance des fonds', error.message);
+      }
+      // Avis individuels sur le fil de chaque dossier (comme une clôture).
+      for (const row of fundRows) {
+        try {
+          const taken = await takeNotices('pret_speculative_funds', row);
+          taken.forEach((notice) => notices.push(notice));
+        } catch (error) {
+          console.error('Avis fonds', row.id, error.message || error);
+        }
       }
       return json(res, 200, {
         bank_date: today,
@@ -223,7 +237,8 @@ module.exports = (req, res) => handler(req, res, async () => {
         missions,
         interest,
         notices,
-        markets
+        markets,
+        markets_meta: marketsMeta
       });
     }
 
@@ -396,9 +411,12 @@ module.exports = (req, res) => handler(req, res, async () => {
       }
     }
 
+    let marketsMeta = null;
     if (wantMarket) {
       try {
         markets = await settleFunds(byName.pret_speculative_funds, new Date());
+        marketsMeta = markets && markets.meta ? markets.meta : null;
+        if (markets && markets.meta) delete markets.meta;
       } catch (error) {
         console.error('Séance des fonds', error.message);
       }
@@ -412,7 +430,8 @@ module.exports = (req, res) => handler(req, res, async () => {
       missions,
       interest,
       notices,
-      markets
+      markets,
+      markets_meta: marketsMeta
     });
   }
 

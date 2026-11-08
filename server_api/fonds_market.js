@@ -1,6 +1,8 @@
 const { sb, json, currentUser, hasPermission, handler } = require('./_lib');
 const { money, marketDateFr, addDays, fundCapital } = require('./money');
 const { PALIERS, TIER_OF, LIBELLES, CONFIG, etatInitial, tirageSemaine, issueSemaine } = require('./fonds_engine');
+const { serviceNotice, enqueueNotice } = require('./discord_actions');
+const { ensureFundDiscordUrl } = require('./fonds_forum_sync');
 
 const SETTING_KEY = 'fonds_market';
 const WEEKDAYS = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -251,7 +253,8 @@ function marketEmbed(week) {
 }
 
 function channelId() {
-  return String(process.env.DISCORD_FUNDS_CHANNEL_ID || '').trim();
+  // Salon texte dédié, sinon forum des fonds (même ID côté Pi si un seul salon est configuré).
+  return String(process.env.DISCORD_FUNDS_CHANNEL_ID || process.env.DISCORD_FUNDS_FORUM_ID || '').trim();
 }
 
 function present(state, date) {
@@ -272,30 +275,37 @@ function present(state, date) {
   return { next: base.next, on, hour: '18:00', timezone: 'Europe/Paris', paliers: week ? paliers : null };
 }
 
+function claimFresh(iso, now, ms = 45000) {
+  const claimed = Date.parse(iso || '');
+  return Number.isFinite(claimed) && now - claimed < ms;
+}
+
 function queueMarkets(state, date = new Date()) {
   const channel = channelId();
-  if (!channel) {
-    if (!channelWarned) {
-      channelWarned = true;
-      console.error('DISCORD_FUNDS_CHANNEL_ID manquant : les relevés de palier restent dans le registre.');
-    }
-    return { items: [], dirty: false };
-  }
   const now = Date.now();
   const items = [];
   let dirty = false;
+  const pending = [];
+  if (!channel) {
+    if (!channelWarned) {
+      channelWarned = true;
+      console.error('DISCORD_FUNDS_CHANNEL_ID / DISCORD_FUNDS_FORUM_ID manquant : les relevés de palier restent dans le registre.');
+    }
+  }
   for (const week of Object.keys(state.weeks || {}).sort()) {
     const data = state.weeks[week];
     if (!data || !data.results) continue;
     data.posted = data.posted || {};
     data.claims = data.claims || {};
     const draftId = String(data.draft_message_id || data.posted.draft || '').trim();
-    const readyToPublish = data.applied && publishReached(date, week);
+    const alreadyPosted = !!(data.posted.releve || PALIERS.every((nom) => data.posted[nom]));
+    const readyToPublish = !!data.applied && publishReached(date, week);
+    if (alreadyPosted) continue;
 
     // 18 h : message d’attente (sera édité à 19 h).
-    if (!readyToPublish && slotReached(date, week) && !draftId && !data.posted.releve) {
-      const claimed = Date.parse(data.claims.draft || '');
-      if (Number.isFinite(claimed) && now - claimed < 120000) continue;
+    if (!readyToPublish && slotReached(date, week) && !draftId) {
+      pending.push({ week, phase: 'draft', reason: channel ? 'awaiting_draft' : 'missing_channel' });
+      if (!channel || claimFresh(data.claims.draft, now)) continue;
       data.claims.draft = new Date(now).toISOString();
       dirty = true;
       items.push({
@@ -309,10 +319,14 @@ function queueMarkets(state, date = new Date()) {
     }
 
     // 19 h : édition du message avec les résultats (ou envoi si pas de brouillon).
-    if (!readyToPublish) continue;
-    if (data.posted.releve || PALIERS.every((nom) => data.posted[nom])) continue;
-    const claimed = Date.parse(data.claims.releve || '');
-    if (Number.isFinite(claimed) && now - claimed < 120000) continue;
+    if (!readyToPublish) {
+      if (data.results && slotReached(date, week) && !data.applied) {
+        pending.push({ week, phase: 'releve', reason: 'awaiting_apply' });
+      }
+      continue;
+    }
+    pending.push({ week, phase: 'releve', reason: channel ? 'awaiting_publish' : 'missing_channel' });
+    if (!channel || claimFresh(data.claims.releve, now)) continue;
     data.claims.releve = new Date(now).toISOString();
     dirty = true;
     items.push({
@@ -324,7 +338,7 @@ function queueMarkets(state, date = new Date()) {
       embed: marketEmbed({ on: week, results: data.results, avant: data.avant, apres: data.apres })
     });
   }
-  return { items, dirty };
+  return { items, dirty, pending, channel: !!channel };
 }
 
 async function loadState() {
@@ -357,65 +371,106 @@ async function settleFunds(funds, date) {
     dirty = true;
   }
   const sunday = dueSunday(state, now);
-  if (sunday) {
+  if (sunday && !state.weeks[sunday]) {
     // 18 h : tirage uniquement.
-    if (!state.weeks[sunday]) {
-      const avant = snapshot(state.etats);
-      const drawn = tirageSemaine(state.etats);
-      const results = {};
-      for (const nom of PALIERS) {
-        results[nom] = {
-          final: drawn.resultats[nom],
-          regime: drawn.etats[nom].regime,
-          label: drawn.details[nom].label,
-          p_gain: drawn.details[nom].p_gain
-        };
-      }
-      state.weeks[sunday] = {
-        results,
-        avant,
-        apres: snapshot(drawn.etats),
-        applied: false,
-        posted: {},
-        claims: {},
-        totals: null,
-        drawn_at: now.toISOString()
+    const avant = snapshot(state.etats);
+    const drawn = tirageSemaine(state.etats);
+    const results = {};
+    for (const nom of PALIERS) {
+      results[nom] = {
+        final: drawn.resultats[nom],
+        regime: drawn.etats[nom].regime,
+        label: drawn.details[nom].label,
+        p_gain: drawn.details[nom].p_gain
       };
-      state.etats = drawn.etats;
-      const signe = PALIERS.map((nom) => `${nom} ${percentFr(results[nom].final)}`).join(', ');
-      console.log(`Tirage des fonds ${sunday} : ${signe}`);
-      await saveState(state);
-      dirty = false;
     }
-    const week = state.weeks[sunday];
-    // 19 h : application sur les comptes, puis édition Discord.
-    if (week && !week.applied && publishReached(now, sunday)) {
-      const totals = blankTotals();
-      for (const row of funds || []) {
-        if (!fundOpenForMarket(row)) continue;
-        const existing = marketLine(row, sunday);
-        if (existing) {
-          addTotal(totals, row.tier, existing);
-          continue;
-        }
-        const patch = applyFund(row, sunday, week.results);
-        if (!patch) continue;
-        const updated = await sb.from('pret_speculative_funds').update(patch).eq('id', row.id);
-        if (updated.error) throw new Error(updated.error.message);
-        Object.assign(row, patch);
-        addTotal(totals, row.tier, patch.statements[patch.statements.length - 1]);
+    state.weeks[sunday] = {
+      results,
+      avant,
+      apres: snapshot(drawn.etats),
+      applied: false,
+      posted: {},
+      claims: {},
+      totals: null,
+      drawn_at: now.toISOString()
+    };
+    state.etats = drawn.etats;
+    const signe = PALIERS.map((nom) => `${nom} ${percentFr(results[nom].final)}`).join(', ');
+    console.log(`Tirage des fonds ${sunday} : ${signe}`);
+    await saveState(state);
+    dirty = false;
+  }
+
+  // 19 h (ou reprise) : appliquer toute séance tirée non encore passée sur les comptes.
+  const toApply = Object.keys(state.weeks || {}).sort().filter((week) => {
+    const data = state.weeks[week];
+    return data && data.results && !data.applied && publishReached(now, week);
+  });
+  for (const weekKey of toApply) {
+    const week = state.weeks[weekKey];
+    const totals = blankTotals();
+    for (const row of funds || []) {
+      if (!fundOpenForMarket(row)) continue;
+      const existing = marketLine(row, weekKey);
+      if (existing) {
+        addTotal(totals, row.tier, existing);
+        continue;
       }
-      week.totals = totals;
-      week.applied = true;
-      week.applied_at = now.toISOString();
-      state.next = addDays(sunday, 7);
-      console.log(`Application des fonds ${sunday} sur les dossiers ouverts`);
+      const patch = applyFund(row, weekKey, week.results);
+      if (!patch) continue;
+      const statement = patch.statements[patch.statements.length - 1];
+      const next = { ...row, ...patch, market_statement: statement };
+      try {
+        await ensureFundDiscordUrl(next);
+        if (next.discord_url && next.discord_url !== row.discord_url) {
+          patch.discord_url = next.discord_url;
+          if (next.discord_posted_at) patch.discord_posted_at = next.discord_posted_at;
+        }
+      } catch (error) {
+        console.error('Lien Discord fonds', row.dossier_number || row.id, error.message || error);
+      }
+      const embed = serviceNotice('speculative_funds', 'market', next);
+      Object.assign(patch, enqueueNotice(next, embed));
+      const updated = await sb.from('pret_speculative_funds').update(patch).eq('id', row.id);
+      if (updated.error) throw new Error(updated.error.message);
+      Object.assign(row, patch);
+      addTotal(totals, row.tier, statement);
+    }
+    week.totals = totals;
+    week.applied = true;
+    week.applied_at = now.toISOString();
+    week.claims = {};
+    if (!state.next || state.next <= weekKey) state.next = addDays(weekKey, 7);
+    console.log(`Application des fonds ${weekKey} sur les dossiers ouverts`);
+    dirty = true;
+  }
+
+  // Reprise Discord : dernière séance appliquée non publiée — lever un claim coincé.
+  const latestUnposted = Object.keys(state.weeks || {}).sort().reverse().find((week) => {
+    const data = state.weeks[week];
+    if (!data || !data.results || !data.applied) return false;
+    const posted = data.posted || {};
+    return !(posted.releve || PALIERS.every((nom) => posted[nom]));
+  });
+  if (latestUnposted && publishReached(now, latestUnposted)) {
+    const data = state.weeks[latestUnposted];
+    data.claims = data.claims || {};
+    if (data.claims.releve || data.claims.draft) {
+      data.claims.releve = null;
+      data.claims.draft = null;
       dirty = true;
     }
   }
+
   const queued = queueMarkets(state, now);
   if (dirty || queued.dirty) await saveState(state);
-  return queued.items;
+  const items = queued.items;
+  items.meta = {
+    channel: queued.channel,
+    pending: queued.pending,
+    next: state.next
+  };
+  return items;
 }
 
 async function acknowledgeMarket(week, palier, messageId) {

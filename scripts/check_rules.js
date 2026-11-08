@@ -406,6 +406,26 @@ const fundCloseAction = actions.serviceNotice('speculative_funds', 'close', {
 assert.ok(fundCloseAction.title.includes('Clôture — fonds'));
 assert.strictEqual(fundCloseAction.color, 0xff0000);
 assert.strictEqual(fundCloseAction.mention, '@Réserve fédérale');
+const fundMarketNotice = actions.serviceNotice('speculative_funds', 'market', {
+  full_name: 'Ada Lovelace', dossier_number: 'FS-000001', tier: 'Palier II', capital_balance: 2040,
+  market_statement: {
+    on: '2026-11-08', result_percent: 2, capital_before: 2000, capital_after: 2040,
+    regime_label: 'Marché calme', market: true
+  }
+});
+assert.ok(fundMarketNotice.title.includes('Compte rendu de séance'));
+assert.ok(fundMarketNotice.description.includes('Palier du dossier'));
+assert.ok(fundMarketNotice.description.includes('Palier II'));
+assert.ok(fundMarketNotice.description.includes('Capital après'));
+assert.ok(fundMarketNotice.description.includes('+2'));
+assert.ok(!fundMarketNotice.description.includes('Palier III'));
+assert.ok(!fundMarketNotice.description.includes('Projection'));
+assert.ok(!fundMarketNotice.description.includes('Haussmann Asset Management'));
+const fundMarketQueued = actions.enqueueNotice(
+  { discord_url: 'https://discord.com/channels/1/2', discord_notices: [] },
+  fundMarketNotice
+);
+assert.strictEqual(fundMarketQueued.discord_notices.length, 1);
 const fundTierChange = actions.serviceNotice('speculative_funds', 'change_tier', {
   full_name: 'Ada Lovelace', dossier_number: 'FS-000001', status: 'ouvert',
   previous_tier: 'Palier I', tier: 'Palier II', capital_balance: 2500

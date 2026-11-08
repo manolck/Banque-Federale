@@ -64,6 +64,25 @@ function serviceNotice(service, action, row) {
     embed.mention = `@${stateLabel(row.agency)}`;
     return embed;
   }
+  if (service === 'speculative_funds' && (action === 'market' || action === 'statement')) {
+    // Compte rendu UNIQUEMENT pour ce dossier (son palier + son capital).
+    // L’annonce globale Haussmann (tous les paliers) part ailleurs, jamais ici.
+    const statement = row.market_statement || lastOf((row.statements || []).filter((item) => item && item.market));
+    const result = Number(statement && statement.result_percent);
+    const tone = result > 0 ? GREEN : result < 0 ? RED : GOLD;
+    const resultText = Number.isFinite(result)
+      ? `${result > 0 ? '+' : ''}${result.toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`
+      : '—';
+    return notice('Compte rendu de séance', [
+      line('Séance', dateFr(statement && statement.on)),
+      line('Palier du dossier', row.tier || '—'),
+      line('Résultat appliqué', resultText),
+      statement && statement.regime_label ? line('Régime', statement.regime_label) : '',
+      line('Capital avant', moneyFr(statement && statement.capital_before)),
+      line('Capital après', moneyFr(statement && statement.capital_after != null ? statement.capital_after : row.capital_balance)),
+      'Ce message concerne uniquement ce dossier. Les autres paliers ne sont pas repris ici.'
+    ], tone, row);
+  }
   if (service === 'speculative_funds' && action === 'deposit') {
     const movement = lastOf(row.deposits);
     return notice('Versement', [

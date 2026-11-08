@@ -14,7 +14,7 @@ Registre des services bancaires RP. L'agence Van Horn, le préfixe `VH` et les c
 8. Planning Europe/Paris du bot Discord :
    - **~1 min** — souscriptions et avis déclenchés au clic (paiement, clôture, rappel…).
    - **16 h** — automatisations daily : ordres de mission, intérêts AV, capitalisation Goldstein, saisie gage, etc.
-   - **18 h** — tirage des taux des fonds spéculatifs + message Discord d’attente (`DISCORD_FUNDS_CHANNEL_ID`, typiquement le dimanche).
+   - **18 h** — tirage des taux des fonds spéculatifs + message Discord d’attente (`DISCORD_FUNDS_CHANNEL_ID`, ou à défaut `DISCORD_FUNDS_FORUM_ID`).
    - **19 h** — application sur les comptes, édition Discord des résultats (1 h après le tirage), puis actualisation du forum des fonds.
    Les dossiers en pause ou clôturés ne bougent pas à la séance.
 
