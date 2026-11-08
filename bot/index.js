@@ -21,7 +21,7 @@ const fundsForumId = process.env.DISCORD_FUNDS_FORUM_ID || '';
 const FUNDS_FORUM_NAME = '💰・fonds-spéculatifs';
 const SCAN_CHUNK = 25;
 
-/** Horaires Europe/Paris : daily 16h, market 18h, actualisation fonds 19h.
+/** Horaires Europe/Paris : daily 16h, tirage fonds 18h, édition Discord + comptes 19h.
  *  Les actions au clic (souscriptions / avis) restent en poll fréquent. */
 const SLOT_DAILY = { hour: 16, minute: 0, key: 'daily' };
 const SLOT_MARKET = { hour: 18, minute: 0, key: 'market' };
@@ -236,8 +236,21 @@ function marketCard(embed) {
 async function postMarket(client, item) {
   const channel = await client.channels.fetch(item.channel_id);
   const embed = marketCard(item.embed);
-  const message = await channel.send(embed ? { embeds: [embed] } : { content: 'Haussmann Capital Partners' });
-  await api('POST', { kind: 'market', week: item.week, palier: item.palier, message_id: message.id });
+  const payload = embed ? { embeds: [embed] } : { content: 'Haussmann Capital Partners' };
+  let message;
+  const editId = String(item.edit_message_id || '').trim();
+  if (editId) {
+    message = await channel.messages.fetch(editId);
+    await message.edit(payload);
+  } else {
+    message = await channel.send(payload);
+  }
+  await api('POST', {
+    kind: 'market',
+    week: item.week,
+    palier: item.palier || item.phase || 'releve',
+    message_id: message.id
+  });
 }
 
 async function postInterest(client, item) {
@@ -408,19 +421,19 @@ async function flushMarkets(client, label = 'Market') {
 
 async function runMarket(client) {
   await withJobLock('market', async () => {
-    console.log(`[${parisParts().date} 18:00 Paris] Job market — séance fonds spéculatifs`);
-    await flushMarkets(client, 'Market OK');
+    console.log(`[${parisParts().date} 18:00 Paris] Job market — tirage + message d’attente`);
+    await flushMarkets(client, 'Market draft');
   });
 }
 
 async function runScan(client) {
   await withJobLock('scan', async () => {
-    console.log(`[${parisParts().date} 19:00 Paris] Actualisation forum fonds`);
-    // Relance les relevés de séance non publiés si l’envoi de 18 h a échoué.
+    console.log(`[${parisParts().date} 19:00 Paris] Édition Discord fonds + actualisation forum`);
+    // 19 h : application comptes + édition du message de résultats (1 h après le tirage).
     try {
-      await flushMarkets(client, 'Market retry');
+      await flushMarkets(client, 'Market publish');
     } catch (error) {
-      console.error('Market retry', error.message || error);
+      console.error('Market publish', error.message || error);
     }
     await scanFunds(client);
   });
@@ -430,8 +443,8 @@ function armSchedule(client) {
   console.log('Planning Europe/Paris :');
   console.log('  · poll ~1 min — souscriptions + avis au clic');
   console.log(`  · 16:00 daily (prochain créneau ${nextSlotLabel(SLOT_DAILY)})`);
-  console.log(`  · 18:00 market fonds (prochain créneau ${nextSlotLabel(SLOT_MARKET)})`);
-  console.log(`  · 19:00 actualisation forum fonds (prochain créneau ${nextSlotLabel(SLOT_SCAN)})`);
+  console.log(`  · 18:00 tirage fonds + message d’attente (prochain créneau ${nextSlotLabel(SLOT_MARKET)})`);
+  console.log(`  · 19:00 édition Discord résultats + scan forum (prochain créneau ${nextSlotLabel(SLOT_SCAN)})`);
 
   const pulse = () => {
     const parts = parisParts();
@@ -443,13 +456,13 @@ function armSchedule(client) {
       markSlot(parts, SLOT_MARKET);
       runMarket(client).catch((error) => console.error('Market', error.message || error));
     }
-    // Entre 18 h et 20 h : nouvel essai des relevés non publiés (toutes les 5 min).
+    // Relances : brouillon 18–19 h, édition résultats 19–20 h.
     if (parts.hour >= 18 && parts.hour < 20 && parts.minute % 5 === 0) {
       const retryKey = `market_retry_${parts.date}_${parts.hour}_${parts.minute}`;
       if (ran.market_retry !== retryKey) {
         ran.market_retry = retryKey;
         withJobLock('market', async () => {
-          await flushMarkets(client, 'Market retry');
+          await flushMarkets(client, parts.hour >= 19 ? 'Market publish retry' : 'Market draft retry');
         }).catch((error) => console.error('Market retry', error.message || error));
       }
     }

@@ -742,14 +742,20 @@ const lost = market.applyFund({ status: 'ouvert', tier: 'Palier III', capital_ba
 assert.strictEqual(lost.capital_balance, 970);
 const tuesday = new Date('2026-10-27T19:00:00Z');
 const sundayMorning = new Date('2026-11-01T15:00:00Z');
-const sundayEvening = new Date('2026-11-01T17:00:00Z');
+const sundayEvening = new Date('2026-11-01T17:00:00Z'); // 18:00 Paris (CET)
+const sundayPublish = new Date('2026-11-01T18:00:00Z'); // 19:00 Paris (CET)
 assert.strictEqual(market.upcomingSunday(tuesday), '2026-11-01');
 assert.strictEqual(market.slotReached(sundayMorning, '2026-11-01'), false);
 assert.strictEqual(market.slotReached(sundayEvening, '2026-11-01'), true);
+assert.strictEqual(market.publishReached(sundayEvening, '2026-11-01'), false);
+assert.strictEqual(market.publishReached(sundayPublish, '2026-11-01'), true);
 assert.strictEqual(market.dueSunday(market.initialMarket(tuesday), tuesday), '');
 assert.strictEqual(market.dueSunday({ next: '2026-11-01' }, sundayEvening), '2026-11-01');
 assert.strictEqual(market.dueSunday({ next: '2026-11-01' }, new Date('2026-11-02T12:00:00Z')), '2026-11-01');
 assert.strictEqual(market.present({ next: '2026-10-30', weeks: {} }, tuesday).next, '2026-11-01');
+const teaser = market.marketTeaserEmbed({ on: '2026-11-08' });
+assert.ok(teaser.description.includes('19 h'));
+assert.ok(teaser.footer.text.includes('08/11/1904 18:00'));
 const calm = engine.issueSemaine('I', engine.etatInitial());
 assert.ok(Math.abs(calm.hausse + calm.baisse + calm.neutre - 1) < 1e-9);
 assert.ok(calm.hausse > calm.baisse);
@@ -791,7 +797,7 @@ assert.notStrictEqual(board.fields[3].value, board.fields[5].value);
 assert.strictEqual(board.fields[6].name, 'Contexte marché');
 assert.strictEqual(board.fields[6].value, "2 semaines de hausse d'affilée avant ce tirage.");
 assert.ok(board.footer.text.includes('perte partielle ou totale'));
-assert.ok(board.footer.text.includes('01/11/1904 18:00'));
+assert.ok(board.footer.text.includes('01/11/1904 19:00'));
 assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-01'), '01/11/1904');
 assert.strictEqual(require('../server_api/money').marketDateFr('2026-11-08'), '08/11/1904');
 const split = market.marketEmbed({

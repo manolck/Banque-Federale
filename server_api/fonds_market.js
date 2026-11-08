@@ -36,11 +36,21 @@ function upcomingSunday(date) {
   return addDays(parts.date, delta);
 }
 
-function slotReached(date, sunday) {
+function hourReached(date, sunday, hour) {
   const parts = parisParts(date);
   if (parts.date > sunday) return true;
   if (parts.date < sunday) return false;
-  return parts.hour > 18 || (parts.hour === 18 && parts.minute >= 0);
+  return parts.hour > hour || (parts.hour === hour && parts.minute >= 0);
+}
+
+/** Tirage des taux : dimanche 18 h Paris. */
+function slotReached(date, sunday) {
+  return hourReached(date, sunday, 18);
+}
+
+/** Application comptes + édition Discord : 1 h après le tirage (19 h Paris). */
+function publishReached(date, sunday) {
+  return hourReached(date, sunday, 19);
 }
 
 function initialMarket(date) {
@@ -193,6 +203,21 @@ function projectionField(nom, etats) {
   };
 }
 
+function marketTeaserEmbed(week) {
+  const when = marketDateFr(week && week.on);
+  return {
+    title: 'Haussmann Capital Partners',
+    color: 0x9370db,
+    description: [
+      'Tirage hebdomadaire des fonds spéculatifs effectué.',
+      'Les résultats seront publiés à **19 h** (une heure après le tirage).'
+    ].join('\n'),
+    footer: {
+      text: `Publication des résultats à 19:00. • ${when} 18:00`
+    }
+  };
+}
+
 function marketEmbed(week) {
   const board = week || {};
   const results = board.results || {};
@@ -220,7 +245,7 @@ function marketEmbed(week) {
       }
     ]),
     footer: {
-      text: `Le capital investi demeure exposé à un risque de perte partielle ou totale selon les conditions du marché. • ${when} 18:00`
+      text: `Le capital investi demeure exposé à un risque de perte partielle ou totale selon les conditions du marché. • ${when} 19:00`
     }
   };
 }
@@ -247,7 +272,7 @@ function present(state, date) {
   return { next: base.next, on, hour: '18:00', timezone: 'Europe/Paris', paliers: week ? paliers : null };
 }
 
-function queueMarkets(state) {
+function queueMarkets(state, date = new Date()) {
   const channel = channelId();
   if (!channel) {
     if (!channelWarned) {
@@ -261,9 +286,30 @@ function queueMarkets(state) {
   let dirty = false;
   for (const week of Object.keys(state.weeks || {}).sort()) {
     const data = state.weeks[week];
-    if (!data || !data.applied || !data.results) continue;
+    if (!data || !data.results) continue;
     data.posted = data.posted || {};
     data.claims = data.claims || {};
+    const draftId = String(data.draft_message_id || data.posted.draft || '').trim();
+    const readyToPublish = data.applied && publishReached(date, week);
+
+    // 18 h : message d’attente (sera édité à 19 h).
+    if (!readyToPublish && slotReached(date, week) && !draftId && !data.posted.releve) {
+      const claimed = Date.parse(data.claims.draft || '');
+      if (Number.isFinite(claimed) && now - claimed < 120000) continue;
+      data.claims.draft = new Date(now).toISOString();
+      dirty = true;
+      items.push({
+        channel_id: channel,
+        week,
+        palier: 'draft',
+        phase: 'draft',
+        embed: marketTeaserEmbed({ on: week })
+      });
+      continue;
+    }
+
+    // 19 h : édition du message avec les résultats (ou envoi si pas de brouillon).
+    if (!readyToPublish) continue;
     if (data.posted.releve || PALIERS.every((nom) => data.posted[nom])) continue;
     const claimed = Date.parse(data.claims.releve || '');
     if (Number.isFinite(claimed) && now - claimed < 120000) continue;
@@ -273,6 +319,8 @@ function queueMarkets(state) {
       channel_id: channel,
       week,
       palier: 'releve',
+      phase: 'releve',
+      edit_message_id: /^\d+$/.test(draftId) ? draftId : undefined,
       embed: marketEmbed({ on: week, results: data.results, avant: data.avant, apres: data.apres })
     });
   }
@@ -310,6 +358,7 @@ async function settleFunds(funds, date) {
   }
   const sunday = dueSunday(state, now);
   if (sunday) {
+    // 18 h : tirage uniquement.
     if (!state.weeks[sunday]) {
       const avant = snapshot(state.etats);
       const drawn = tirageSemaine(state.etats);
@@ -329,14 +378,18 @@ async function settleFunds(funds, date) {
         applied: false,
         posted: {},
         claims: {},
-        totals: null
+        totals: null,
+        drawn_at: now.toISOString()
       };
       state.etats = drawn.etats;
+      const signe = PALIERS.map((nom) => `${nom} ${percentFr(results[nom].final)}`).join(', ');
+      console.log(`Tirage des fonds ${sunday} : ${signe}`);
       await saveState(state);
       dirty = false;
     }
     const week = state.weeks[sunday];
-    if (!week.applied) {
+    // 19 h : application sur les comptes, puis édition Discord.
+    if (week && !week.applied && publishReached(now, sunday)) {
       const totals = blankTotals();
       for (const row of funds || []) {
         if (!fundOpenForMarket(row)) continue;
@@ -354,27 +407,37 @@ async function settleFunds(funds, date) {
       }
       week.totals = totals;
       week.applied = true;
+      week.applied_at = now.toISOString();
       state.next = addDays(sunday, 7);
-      const signe = PALIERS.map((nom) => `${nom} ${percentFr(week.results[nom].final)}`).join(', ');
-      console.log(`Séance des fonds ${sunday} : ${signe}`);
+      console.log(`Application des fonds ${sunday} sur les dossiers ouverts`);
       dirty = true;
     }
   }
-  const queued = queueMarkets(state);
+  const queued = queueMarkets(state, now);
   if (dirty || queued.dirty) await saveState(state);
   return queued.items;
 }
 
 async function acknowledgeMarket(week, palier, messageId) {
+  const draft = palier === 'draft';
   const releve = palier === 'releve';
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(week || '')) || (!releve && !PALIERS.includes(palier))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(week || '')) || (!draft && !releve && !PALIERS.includes(palier))) {
     return { status: 400, error: 'Accusé de séance incomplet.' };
   }
   const state = await loadState();
   const data = state && state.weeks && state.weeks[week];
   if (!data) return { status: 404, error: 'Séance introuvable.' };
-  const posted = { ...(data.posted || {}), [palier]: messageId || 'posted' };
-  if (releve) for (const nom of PALIERS) posted[nom] = messageId || 'posted';
+  const posted = { ...(data.posted || {}) };
+  if (draft) {
+    posted.draft = messageId || 'posted';
+    if (messageId) data.draft_message_id = String(messageId);
+  } else {
+    posted[palier] = messageId || 'posted';
+    if (releve) {
+      for (const nom of PALIERS) posted[nom] = messageId || 'posted';
+      if (messageId) data.draft_message_id = String(messageId);
+    }
+  }
   data.posted = posted;
   await saveState(state);
   return { ok: true };
@@ -398,7 +461,9 @@ route.upcomingSunday = upcomingSunday;
 route.dueFriday = dueSunday;
 route.upcomingFriday = upcomingSunday;
 route.slotReached = slotReached;
+route.publishReached = publishReached;
 route.applyFund = applyFund;
 route.fundOpenForMarket = fundOpenForMarket;
 route.marketEmbed = marketEmbed;
+route.marketTeaserEmbed = marketTeaserEmbed;
 module.exports = route;
