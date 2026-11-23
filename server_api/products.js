@@ -536,6 +536,9 @@ function catchUpFund(row, body) {
 }
 
 function moveGoldstein(row, body) {
+  if (row.status === 'solde' || row.status === 'clos' || row.status === 'paye') {
+    return fail('Ce livret est clôturé.');
+  }
   const amount = money(body.amount);
   if (!(amount > 0)) return fail('Le montant du mouvement est obligatoire.');
   const balance = body.action === 'withdraw' ? money(row.balance - amount) : money(row.balance + amount);
@@ -550,13 +553,14 @@ function moveGoldstein(row, body) {
     balance,
     on: body.on || rpToday()
   });
+  const paused = String(row.status || '').trim().toLowerCase() === 'pause';
   return {
     row: {
       ...row,
       balance,
       period_interest: next.interest,
       next_balance: next.nextBalance,
-      status: balance === 0 ? 'solde' : 'ouvert',
+      status: balance === 0 ? 'solde' : (paused ? 'pause' : 'ouvert'),
       movements
     }
   };

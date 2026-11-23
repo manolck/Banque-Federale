@@ -270,6 +270,26 @@ assert.ok(goldsteinCap.description.includes('15,00') || goldsteinCap.description
 assert.ok(goldsteinCap.description.includes('Solde (base)'));
 assert.ok(goldsteinCap.description.includes('Nouveau solde'));
 assert.strictEqual(goldsteinCap.color, 0x1f8b4c);
+const goldsteinPause = require('../server_api/discord_actions').serviceNotice('goldstein_booklets', 'pause', {
+  prenom: 'Benjamin', nom: 'Goldstein', dossier_number: 'LEG-000001', balance: 500, status: 'pause'
+});
+assert.ok(goldsteinPause.title.includes('Mise en pause'));
+assert.ok(goldsteinPause.description.includes('suspendus'));
+assert.strictEqual(goldsteinPause.color, 0xd7a64d);
+const goldsteinResume = require('../server_api/discord_actions').serviceNotice('goldstein_booklets', 'resume', {
+  prenom: 'Benjamin', nom: 'Goldstein', dossier_number: 'LEG-000001', balance: 500, status: 'ouvert',
+  next_capitalization: '1904-11-24'
+});
+assert.ok(goldsteinResume.title.includes('Reprise'));
+assert.ok(goldsteinResume.description.includes('capitalisation'));
+assert.strictEqual(goldsteinResume.color, 0x1f8b4c);
+const goldsteinPausedMove = require('../server_api/products').PRODUCTS.goldstein_booklets.move(
+  { status: 'pause', balance: 500, period_interest: 15, next_balance: 515, movements: [] },
+  { action: 'deposit', amount: 100 }
+);
+assert.strictEqual(goldsteinPausedMove.error, undefined);
+assert.strictEqual(goldsteinPausedMove.row.status, 'pause');
+assert.strictEqual(goldsteinPausedMove.row.balance, 600);
 assert.ok(!mission.description.includes('@Texas'));
 assert.ok(mission.description.includes('Texas'));
 const loanEmbed = forms.loanEmbed({

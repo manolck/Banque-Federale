@@ -11,7 +11,7 @@ function canCatchUpFund(actor) {
 const { PRODUCTS } = require('./products');
 const { discordUrlOk } = require('./discord_forms');
 const { serviceNotice, enqueueNotice } = require('./discord_actions');
-const { fundCapital } = require('./money');
+const { fundCapital, asRpDay, rpToday, addDays } = require('./money');
 
 function createServiceRoute(name) {
   const product = PRODUCTS[name];
@@ -91,14 +91,24 @@ function createServiceRoute(name) {
         }
         patch = { status: 'clos', closed_at: new Date().toISOString() };
       } else if (body.action === 'pause' || body.action === 'resume') {
-        if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });
+        if (name !== 'speculative_funds' && name !== 'goldstein_booklets') {
+          return json(res, 400, { error: 'Action inconnue.' });
+        }
         if (body.action === 'pause') {
-          if (current.data.status === 'clos' || current.data.status === 'paye') return json(res, 409, { error: 'Un dossier clôturé ne se met pas en pause.' });
+          if (current.data.status === 'clos' || current.data.status === 'paye' || current.data.status === 'solde') {
+            return json(res, 409, { error: 'Un dossier clôturé ne se met pas en pause.' });
+          }
           patch = { status: 'pause' };
         } else if (current.data.status !== 'pause') {
           return json(res, 409, { error: 'Ce dossier n\'est pas en pause.' });
         } else {
           patch = { status: 'ouvert' };
+          // Reprise : pas de rattrapage d’intérêts / avis Discord sur la période gelée.
+          if (name === 'goldstein_booklets') {
+            const due = asRpDay(current.data.next_capitalization);
+            const today = rpToday();
+            if (due && today >= due) patch.next_capitalization = addDays(today, 14);
+          }
         }
       } else if (body.action === 'change_tier') {
         if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });

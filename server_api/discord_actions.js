@@ -194,6 +194,19 @@ function serviceNotice(service, action, row) {
       'Les intérêts sont calculés uniquement sur le solde au jour de la capitalisation.'
     ], GREEN, row);
   }
+  if (service === 'goldstein_booklets' && action === 'pause') {
+    return notice('Mise en pause — livret Goldstein', [
+      line('Solde', moneyFr(row.balance)),
+      'La capitalisation et les avis Discord sont suspendus jusqu’à la reprise.'
+    ], GOLD, row);
+  }
+  if (service === 'goldstein_booklets' && action === 'resume') {
+    return notice('Reprise — livret Goldstein', [
+      line('Solde', moneyFr(row.balance)),
+      line('Prochaine capitalisation', dateFr(row.next_capitalization)),
+      'Le livret reprend la capitalisation bi-hebdomadaire.'
+    ], GREEN, row);
+  }
   if (service === 'goldstein_booklets' && (action === 'deposit' || action === 'withdraw')) {
     const movement = lastOf(row.movements);
     const sold = action === 'withdraw' && Number(row.balance) === 0;

@@ -323,7 +323,7 @@ module.exports = (req, res) => handler(req, res, async () => {
       }
 
       for (const row of byName.pret_goldstein_booklets) {
-        if (row.status === 'solde' || !(Number(row.balance) > 0)) continue;
+        if (row.status === 'solde' || row.status === 'pause' || !(Number(row.balance) > 0)) continue;
         let due = asRpDay(row.next_capitalization);
         if (!(due && today >= due)) continue;
         let working = { ...row };
