@@ -941,24 +941,6 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       setBusy(false);
     }
   }
-  async function rescheduleAllGoldstein() {
-    if (busy) return;
-    if (!window.confirm('Recaler toutes les échéances des livrets Goldstein sur +1,5 % / semaine ?\nLes intérêts de période et la prochaine capitalisation seront mis à jour (sans rattrapage d’intérêts manqués).')) return;
-    try {
-      setBusy(true);
-      const result = await bfKit().api.saveService(spec.route, { action: 'reschedule_all' }, 'PUT');
-      await load();
-      if (selected) {
-        const refreshed = (await bfKit().api.service(spec.route)).find((row) => String(row.id) === String(selected.id));
-        if (refreshed) setSelected(refreshed);
-      }
-      notify(`${result && result.updated != null ? result.updated : 0} livret(s) recalés`);
-    } catch (error) {
-      notify('⚠ ' + error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function moveFunds(action) {
     if (await act(action, { amount: movement })) setMovement('');
   }
@@ -1109,16 +1091,6 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
         {service === 'goldstein_booklets' && selected.status === 'pause' && <Btn disabled={busy} onClick={() => act('resume')}>Reprendre</Btn>}
         {service === 'goldstein_booklets' && selected.status !== 'pause' && selected.status !== 'solde' && selected.status !== 'clos' && selected.status !== 'paye' && (
           <Btn color="#555" disabled={busy} onClick={() => act('pause')}>Mettre en pause</Btn>
-        )}
-        {service === 'goldstein_booklets' && selected.status !== 'solde' && selected.status !== 'clos' && selected.status !== 'paye' && (
-          <Btn
-            color="#555"
-            disabled={busy}
-            onClick={async () => {
-              if (!window.confirm('Recaler ce livret sur +1,5 % / semaine ?\nLa prochaine capitalisation et l’intérêt de période seront mis à jour (sans rattrapage d’intérêts).')) return;
-              await act('reschedule');
-            }}
-          >Recaler l’échéance</Btn>
         )}
         {service === 'speculative_funds' && selected.status !== 'clos' && selected.status !== 'paye' && <>
           <Select label="Palier" value={tierDraft || selected.tier || 'Palier I'} onChange={(event) => setTierDraft(event.target.value)}>
@@ -1276,12 +1248,7 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       kicker={spec.kicker}
       title={spec.title}
       note={spec.note}
-      action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        {service === 'goldstein_booklets' && (
-          <Btn color="#555" disabled={busy} onClick={rescheduleAllGoldstein}>Recaler les échéances</Btn>
-        )}
-        <Btn onClick={begin}>{spec.create}</Btn>
-      </div>}
+      action={<Btn onClick={begin}>{spec.create}</Btn>}
       rows={listed}
       tabs={serviceTabs(service)}
       categoryOf={(row) => serviceSnapshot(service, row).category}
