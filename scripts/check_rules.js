@@ -56,19 +56,32 @@ assert.strictEqual(payroll.management, 50);
 assert.strictEqual(payroll.transfer, 50);
 assert.strictEqual(payroll.installment, 100);
 
+assert.strictEqual(money.GOLDSTEIN_RATE, 0.015);
+assert.strictEqual(money.GOLDSTEIN_PERIOD_DAYS, 7);
 const first = money.goldsteinNext(100);
-assert.strictEqual(first.interest, 3);
-assert.strictEqual(first.nextBalance, 103);
-const second = money.goldsteinNext(103);
-assert.strictEqual(second.interest, 3.09);
-assert.strictEqual(second.nextBalance, 106.09);
+assert.strictEqual(first.interest, 1.5);
+assert.strictEqual(first.nextBalance, 101.5);
+const second = money.goldsteinNext(101.5);
+assert.strictEqual(second.interest, 1.52);
+assert.strictEqual(second.nextBalance, 103.02);
 const afterWithdrawal = money.goldsteinNext(53);
-assert.strictEqual(afterWithdrawal.interest, 1.59);
-assert.strictEqual(afterWithdrawal.nextBalance, 54.59);
+assert.strictEqual(afterWithdrawal.interest, 0.8);
+assert.strictEqual(afterWithdrawal.nextBalance, 53.8);
 // Ouverture 1000 $, retrait 500 $ avant l'échéance : intérêts uniquement sur 500 $.
 const halfBook = money.goldsteinNext(500);
-assert.strictEqual(halfBook.interest, 15);
-assert.strictEqual(halfBook.nextBalance, 515);
+assert.strictEqual(halfBook.interest, 7.5);
+assert.strictEqual(halfBook.nextBalance, 507.5);
+const goldsteinReschedule = money.goldsteinReschedule({
+  status: 'ouvert',
+  balance: 500,
+  opened_on: '1904-11-03',
+  signed_on: '1904-11-03',
+  movements: [{ type: 'capitalisation', on: '1904-11-10', amount: 15 }]
+}, '1904-11-12');
+assert.strictEqual(goldsteinReschedule.error, undefined);
+assert.strictEqual(goldsteinReschedule.row.period_interest, 7.5);
+assert.strictEqual(goldsteinReschedule.row.next_balance, 507.5);
+assert.strictEqual(goldsteinReschedule.row.next_capitalization, '1904-11-17');
 
 assert.strictEqual(money.money(7500 / 8), 937.5);
 const lifeSub = money.lifeFinancials([

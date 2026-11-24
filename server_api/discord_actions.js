@@ -189,7 +189,7 @@ function serviceNotice(service, action, row) {
     return notice('Intérêts — livret Goldstein', [
       line('Date', dateFr(movement.on)),
       line('Solde (base)', moneyFr(before)),
-      line('Intérêts 3 %', moneyFr(movement.amount)),
+      line('Intérêts 1,5 %', moneyFr(movement.amount)),
       line('Nouveau solde', moneyFr(row.balance)),
       'Les intérêts sont calculés uniquement sur le solde au jour de la capitalisation.'
     ], GREEN, row);
@@ -204,8 +204,16 @@ function serviceNotice(service, action, row) {
     return notice('Reprise — livret Goldstein', [
       line('Solde', moneyFr(row.balance)),
       line('Prochaine capitalisation', dateFr(row.next_capitalization)),
-      'Le livret reprend la capitalisation bi-hebdomadaire.'
+      'Le livret reprend la capitalisation hebdomadaire.'
     ], GREEN, row);
+  }
+  if (service === 'goldstein_booklets' && action === 'reschedule') {
+    return notice('Recalage — livret Goldstein', [
+      line('Solde', moneyFr(row.balance)),
+      line('Intérêt de la période', moneyFr(row.period_interest)),
+      line('Prochaine capitalisation', dateFr(row.next_capitalization)),
+      'Offre actualisée : +1,5 % du solde, chaque semaine.'
+    ], GOLD, row);
   }
   if (service === 'goldstein_booklets' && (action === 'deposit' || action === 'withdraw')) {
     const movement = lastOf(row.movements);

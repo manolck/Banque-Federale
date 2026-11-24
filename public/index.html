@@ -1144,7 +1144,7 @@ body{
 <link rel="stylesheet" href="/front.css" />
 </head>
 <body><div id="root"></div>
-<script type="text/babel" src="/services.jsx?v=20261123a"></script>
+<script type="text/babel" src="/services.jsx?v=20261124a"></script>
 <script type="text/babel">
 const{useState,useEffect,useMemo}=React;
 const C={bg:'#0f1117',card:'#1a1d2e',bord:'#2a2d3e',blue:'#4a9eff',gold:'#f0b429',green:'#2ecc71',red:'#ff4444',orange:'#ff8800',txt:'#e2e8f0',muted:'#8892a0'};
@@ -1477,7 +1477,7 @@ function serviceOffer(service, row){
   else if(service==='consigne_contracts'){title=row.coverage||'Consigne';left=fCur(row.weekly_total);leftLabel='Par semaine';right=fCur(row.stored_value);rightLabel='Déposé';due=row.next_due;extra=due?fDate(due):'';}
   else if(service==='term_savings'){title=row.weeks?`${row.weeks} semaines`:'Épargne';left=fCur(row.amount);leftLabel='Placé';right=fCur(row.settlement?row.settlement.net:(row.maturity_amount||row.amount_due));rightLabel=row.settlement?'Restitué':"À l'échéance";due=row.echeance_date;extra=due?fDate(due):'';}
   else if(service==='payroll_contracts'){title=row.company_name||'Paie';left=fCur(row.payroll);leftLabel='Masse salariale';right=fCur(row.installment_cost||row.amount_due);rightLabel='Échéance';due=row.next_due;extra=due?fDate(due):'';}
-  else if(service==='goldstein_booklets'){title='Livret';left=fCur(row.balance);leftLabel='Nouveau solde';right=fCur(row.period_interest);rightLabel='Intérêt 3 %';due=row.next_capitalization;extra=due?fDate(due):'';}
+  else if(service==='goldstein_booklets'){title='Livret';left=fCur(row.balance);leftLabel='Nouveau solde';right=fCur(row.period_interest);rightLabel='Intérêt 1,5 %';due=row.next_capitalization;extra=due?fDate(due):'';}
   const late=offerLate(due, closed);
   const status=row.status==='pause'?'En pause':late?'En retard':closed?'Clôturé':'Ouvert';
   return {id:row.id, ref:row.dossier_number||row.id, title, status, tone:late?'is-late':closed?'':'is-soon', left, leftLabel, right, rightLabel, extra};

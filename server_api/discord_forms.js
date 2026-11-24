@@ -1,7 +1,7 @@
 const { sb } = require('./_lib');
 const {
   money, moneyFr, dateFr, addDays, stateLabel,
-  termQuote, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext, discordUrlOk, validDate
+  termQuote, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext, GOLDSTEIN_PERIOD_DAYS, discordUrlOk, validDate
 } = require('./money');
 
 const AGENCIES = ['saint_denis', 'van_horn', 'valentine', 'rhodes', 'blackwater', 'strawberry', 'sunset'];
@@ -588,7 +588,7 @@ function goldsteinText(row) {
     line('Identification bancaire', `N°${row.bank_id || ''}`),
     line('Premier versement', moneyFr(row.opening_amount)),
     line('Nouveau solde', moneyFr(row.balance)),
-    line('Règle', '+3 % du solde, toutes les deux semaines'),
+    line('Règle', '+1,5 % du solde, chaque semaine'),
     line('Prochaine capitalisation', dateFr(row.next_capitalization)),
     line("Intérêt de la période", moneyFr(row.period_interest)),
     line('Solde prévu', moneyFr(row.next_balance)),
@@ -596,11 +596,11 @@ function goldsteinText(row) {
     '**DÉCLARATIONS**',
     ...accepted([
       [row.declare_accuracy, 'Exactitude des informations'],
-      [row.declare_rule, 'Connaissance de la règle des 3 % toutes les deux semaines sur le solde'],
+      [row.declare_rule, 'Connaissance de la règle des 1,5 % chaque semaine sur le solde'],
       [row.declare_terms, 'Prise de connaissance des conditions générales']
     ]),
     '',
-    "Les sommes inscrites au livret demeurent la propriété du titulaire. Toutes les deux semaines, la Interstate Banking & Trust Company porte au crédit du livret un intérêt de 3 % calculé sur le seul solde."
+    "Les sommes inscrites au livret demeurent la propriété du titulaire. Chaque semaine, la Interstate Banking & Trust Company porte au crédit du livret un intérêt de 1,5 % calculé sur le seul solde."
   ]).join('\n');
 }
 
@@ -759,7 +759,7 @@ function quoteGoldstein(balance, openedOn) {
     balance: money(balance),
     period_interest: next.interest,
     next_balance: next.nextBalance,
-    next_capitalization: addDays(openedOn, 14)
+    next_capitalization: addDays(openedOn, GOLDSTEIN_PERIOD_DAYS)
   };
 }
 

@@ -1,6 +1,6 @@
 const { timingSafeEqual } = require('node:crypto');
 const { sb, json, readBody, handler } = require('./_lib');
-const { addDays, validDate, money, moneyFr, dateFr, discordUrlOk, stateOf, stateLabel, goldsteinNext, lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, rpToday } = require('./money');
+const { addDays, validDate, money, moneyFr, dateFr, discordUrlOk, stateOf, stateLabel, goldsteinNext, GOLDSTEIN_PERIOD_DAYS, lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, rpToday } = require('./money');
 const { missionTitle, missionEmbed, letterhead, embedFromText, receiptForumId, receiptTitle, receiptTags, lifeInterestEmbed } = require('./discord_forms');
 const { serviceNotice, enqueueNotice, claimNotices, deliveryLocked, claimExpired } = require('./discord_actions');
 const { WEEKLY_RATE } = require('./fonds_interest');
@@ -343,7 +343,7 @@ module.exports = (req, res) => handler(req, res, async () => {
             balance: credited.nextBalance,
             period_interest: following.interest,
             next_balance: following.nextBalance,
-            next_capitalization: addDays(due, 14),
+            next_capitalization: addDays(due, GOLDSTEIN_PERIOD_DAYS),
             movements,
             status: credited.nextBalance === 0 ? 'solde' : 'ouvert'
           };

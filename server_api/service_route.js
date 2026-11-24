@@ -11,7 +11,7 @@ function canCatchUpFund(actor) {
 const { PRODUCTS } = require('./products');
 const { discordUrlOk } = require('./discord_forms');
 const { serviceNotice, enqueueNotice } = require('./discord_actions');
-const { fundCapital, asRpDay, rpToday, addDays } = require('./money');
+const { fundCapital, asRpDay, rpToday, addDays, GOLDSTEIN_PERIOD_DAYS, goldsteinReschedule } = require('./money');
 
 function createServiceRoute(name) {
   const product = PRODUCTS[name];
@@ -56,6 +56,30 @@ function createServiceRoute(name) {
 
     if (req.method === 'PUT') {
       const body = await readBody(req);
+      if (body.action === 'reschedule_all') {
+        if (name !== 'goldstein_booklets') return json(res, 400, { error: 'Action inconnue.' });
+        const listed = await sb.from(product.collection).select('*');
+        if (listed.error) return json(res, 500, { error: listed.error.message });
+        let updatedCount = 0;
+        for (const row of listed.data || []) {
+          const rebuilt = goldsteinReschedule(row);
+          if (rebuilt.error) continue;
+          const next = { ...row, ...rebuilt.row };
+          const embed = serviceNotice(name, 'reschedule', next);
+          const patchRow = { ...rebuilt.row };
+          Object.assign(patchRow, enqueueNotice(next, embed));
+          const saved = await sb.from(product.collection).update(patchRow).eq('id', row.id);
+          if (saved.error) return json(res, 500, { error: saved.error.message });
+          updatedCount += 1;
+        }
+        await sb.from('pret_service_events').insert({
+          service: name,
+          record_id: 'all',
+          event_type: 'reschedule_all',
+          actor_username: actor.username
+        });
+        return json(res, 200, { ok: true, updated: updatedCount });
+      }
       if (!body.id) return json(res, 400, { error: 'Dossier manquant.' });
       const current = await sb.from(product.collection).select('*').eq('id', body.id).maybeSingle();
       if (current.error) return json(res, 500, { error: current.error.message });
@@ -107,9 +131,14 @@ function createServiceRoute(name) {
           if (name === 'goldstein_booklets') {
             const due = asRpDay(current.data.next_capitalization);
             const today = rpToday();
-            if (due && today >= due) patch.next_capitalization = addDays(today, 14);
+            if (due && today >= due) patch.next_capitalization = addDays(today, GOLDSTEIN_PERIOD_DAYS);
           }
         }
+      } else if (body.action === 'reschedule') {
+        if (name !== 'goldstein_booklets') return json(res, 400, { error: 'Action inconnue.' });
+        const rebuilt = goldsteinReschedule(current.data);
+        if (rebuilt.error) return json(res, 400, { error: rebuilt.error });
+        patch = rebuilt.row;
       } else if (body.action === 'change_tier') {
         if (name !== 'speculative_funds') return json(res, 400, { error: 'Action inconnue.' });
         if (current.data.status === 'clos' || current.data.status === 'paye') {

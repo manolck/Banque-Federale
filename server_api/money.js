@@ -176,10 +176,39 @@ function payrollQuote(employees, payroll, unit) {
   return { management, transfer, installment: money(management + transfer), unit: fee };
 }
 
+const GOLDSTEIN_RATE = 0.015;
+const GOLDSTEIN_PERIOD_DAYS = 7;
+
 function goldsteinNext(balance) {
   const remaining = money(balance);
-  const interest = money(remaining * 0.03);
+  const interest = money(remaining * GOLDSTEIN_RATE);
   return { interest, nextBalance: money(remaining + interest) };
+}
+
+function goldsteinReschedule(row, today = rpToday()) {
+  const status = String((row && row.status) || '').trim().toLowerCase();
+  if (['solde', 'clos', 'paye'].includes(status)) {
+    return { error: 'Ce livret est clôturé.' };
+  }
+  const balance = money(row && row.balance);
+  const next = goldsteinNext(balance);
+  const movements = Array.isArray(row && row.movements) ? row.movements : [];
+  const lastCap = [...movements]
+    .filter((item) => item && String(item.type || '').toLowerCase() === 'capitalisation' && item.on)
+    .sort((left, right) => String(left.on).localeCompare(String(right.on)))
+    .slice(-1)[0];
+  const anchor = asRpDay((lastCap && lastCap.on) || row.opened_on || row.signed_on || today) || today;
+  let due = addDays(anchor, GOLDSTEIN_PERIOD_DAYS);
+  const now = asRpDay(today) || today;
+  // Si l’ancienne échéance bi-hebdo est déjà dépassée, enchaîner dès la semaine suivante.
+  if (due && now > due) due = addDays(now, GOLDSTEIN_PERIOD_DAYS);
+  return {
+    row: {
+      period_interest: next.interest,
+      next_balance: next.nextBalance,
+      next_capitalization: due
+    }
+  };
 }
 
 const TEXAS = new Set(['blackwater', 'strawberry', 'sunset']);
@@ -434,7 +463,8 @@ function fundWithdrawalQuote(row, gross) {
 
 module.exports = {
   money, moneyFr, dateFr, marketDateFr, marketOnKey, unsnapMarketOn, civilIso, rpIso, addDays, validDate, payment, periodsForDays, buildSchedule,
-  TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote, goldsteinNext,
+  TERM_RATES, termQuote, termPayout, datedLike, rpToday, rpPlusDays, rpDaysDiff, consigneWeekly, pawnQuote, payrollQuote,
+  GOLDSTEIN_RATE, GOLDSTEIN_PERIOD_DAYS, goldsteinNext, goldsteinReschedule,
   stateOf, stateLabel, discordUrlOk, TEXAS,
   lifeFinancials, lifeAsOf, lifePaymentsComplete, lifeLastPaidOn, asRpDay, civilToday, completedWeeks, growLifeDeposit,
   fundCapital, fundCostBasis, fundOpening, fundContributed, fundContributedFields, fundWithdrawnTotal, fundWithdrawals, fundDepositQuote, fundWithdrawalQuote

@@ -550,7 +550,7 @@ function serviceSnapshot(service, row) {
   } else if (service === 'goldstein_booklets') {
     due = row.next_capitalization;
     left = bfFr(row.balance); leftLabel = 'Nouveau solde';
-    right = bfFr(row.period_interest); rightLabel = 'Intérêt 3 %';
+    right = bfFr(row.period_interest); rightLabel = 'Intérêt 1,5 %';
     dueCaption = 'Prochaine capitalisation';
   }
   const category = service === 'speculative_funds'
@@ -768,7 +768,7 @@ function dossierSides(service, row) {
   }
   return {
     left: [['Prochaine capitalisation', bfDate(row.next_capitalization)]],
-    right: [['Nouveau solde', bfFr(row.balance), '#f3d58a'], ['Intérêt 3 %', bfFr(row.period_interest)], ['Solde prévu', bfFr(row.next_balance), '#74d59d']]
+    right: [['Nouveau solde', bfFr(row.balance), '#f3d58a'], ['Intérêt 1,5 %', bfFr(row.period_interest)], ['Solde prévu', bfFr(row.next_balance), '#74d59d']]
   };
 }
 function DueLedger({ title, rows }) {
@@ -941,6 +941,24 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       setBusy(false);
     }
   }
+  async function rescheduleAllGoldstein() {
+    if (busy) return;
+    if (!window.confirm('Recaler toutes les échéances des livrets Goldstein sur +1,5 % / semaine ?\nLes intérêts de période et la prochaine capitalisation seront mis à jour (sans rattrapage d’intérêts manqués).')) return;
+    try {
+      setBusy(true);
+      const result = await bfKit().api.saveService(spec.route, { action: 'reschedule_all' }, 'PUT');
+      await load();
+      if (selected) {
+        const refreshed = (await bfKit().api.service(spec.route)).find((row) => String(row.id) === String(selected.id));
+        if (refreshed) setSelected(refreshed);
+      }
+      notify(`${result && result.updated != null ? result.updated : 0} livret(s) recalés`);
+    } catch (error) {
+      notify('⚠ ' + error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function moveFunds(action) {
     if (await act(action, { amount: movement })) setMovement('');
   }
@@ -1091,6 +1109,16 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
         {service === 'goldstein_booklets' && selected.status === 'pause' && <Btn disabled={busy} onClick={() => act('resume')}>Reprendre</Btn>}
         {service === 'goldstein_booklets' && selected.status !== 'pause' && selected.status !== 'solde' && selected.status !== 'clos' && selected.status !== 'paye' && (
           <Btn color="#555" disabled={busy} onClick={() => act('pause')}>Mettre en pause</Btn>
+        )}
+        {service === 'goldstein_booklets' && selected.status !== 'solde' && selected.status !== 'clos' && selected.status !== 'paye' && (
+          <Btn
+            color="#555"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm('Recaler ce livret sur +1,5 % / semaine ?\nLa prochaine capitalisation et l’intérêt de période seront mis à jour (sans rattrapage d’intérêts).')) return;
+              await act('reschedule');
+            }}
+          >Recaler l’échéance</Btn>
         )}
         {service === 'speculative_funds' && selected.status !== 'clos' && selected.status !== 'paye' && <>
           <Select label="Palier" value={tierDraft || selected.tier || 'Palier I'} onChange={(event) => setTierDraft(event.target.value)}>
@@ -1248,7 +1276,12 @@ function ServiceDesk({ service, notify, activeAgence, onActiveAgenceChange, clie
       kicker={spec.kicker}
       title={spec.title}
       note={spec.note}
-      action={<Btn onClick={begin}>{spec.create}</Btn>}
+      action={<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+        {service === 'goldstein_booklets' && (
+          <Btn color="#555" disabled={busy} onClick={rescheduleAllGoldstein}>Recaler les échéances</Btn>
+        )}
+        <Btn onClick={begin}>{spec.create}</Btn>
+      </div>}
       rows={listed}
       tabs={serviceTabs(service)}
       categoryOf={(row) => serviceSnapshot(service, row).category}
@@ -1564,8 +1597,8 @@ const BF_SERVICES = {
     route: 'goldstein_booklets', title: "Livret d'épargne Goldstein", kicker: 'Livret', create: '+ Nouveau livret', savings: true,
     blank: () => ({ civility: 'Monsieur', payment_mode: 'Transfert bancaire', origin: 'Revenus professionnels' }),
     preview: (form) => {
-      const interest = bfMoney(Number(form.opening_amount) * 0.03);
-      return { Règle: '+3 % du solde, toutes les deux semaines', 'Prochaine capitalisation': bfDate(bfAddDays(form.signed_on, 14)), 'Intérêt de la période': bfFr(interest), 'Nouveau solde': bfFr(bfMoney(Number(form.opening_amount) + interest)) };
+      const interest = bfMoney(Number(form.opening_amount) * 0.015);
+      return { Règle: '+1,5 % du solde, chaque semaine', 'Prochaine capitalisation': bfDate(bfAddDays(form.signed_on, 7)), 'Intérêt de la période': bfFr(interest), 'Nouveau solde': bfFr(bfMoney(Number(form.opening_amount) + interest)) };
     },
     payload: (form) => form,
     form: (form, setForm) => {
@@ -1585,7 +1618,7 @@ const BF_SERVICES = {
         </Part>
         <Part title="Déclarations" plain>
           <Flag label="Exactitude des informations" checked={form.declare_accuracy} onChange={(value) => setForm({ ...form, declare_accuracy: value })} />
-          <Flag label="Connaissance de la règle des 3 % toutes les deux semaines" checked={form.declare_rule} onChange={(value) => setForm({ ...form, declare_rule: value })} />
+          <Flag label="Connaissance de la règle des 1,5 % chaque semaine" checked={form.declare_rule} onChange={(value) => setForm({ ...form, declare_rule: value })} />
           <Flag label="Prise de connaissance des conditions générales" checked={form.declare_terms} onChange={(value) => setForm({ ...form, declare_terms: value })} />
         </Part>
       </>;
